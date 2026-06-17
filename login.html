@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NobleHyve - Login</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e1e1e 0%, #2d2d2d 100%);
+            color: #cccccc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            width: 100vw;
+        }
+
+        .container {
+            background: #252526;
+            padding: 40px;
+            border-radius: 12px;
+            width: 400px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #007acc;
+            font-size: 28px;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            background: #3c3c3c;
+            border: 1px solid #555;
+            border-radius: 6px;
+            color: white;
+            font-size: 14px;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #007acc;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #0e639c;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            background: #1177bb;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .switch {
+            text-align: center;
+            cursor: pointer;
+            color: #007acc;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .switch:hover {
+            text-decoration: underline;
+        }
+
+        .message {
+            text-align: center;
+            margin-top: 10px;
+            font-size: 12px;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .error {
+            background: #5a1d1d;
+            color: #f48771;
+        }
+
+        .success {
+            background: #1e4d2b;
+            color: #6a9955;
+        }
+
+        .info {
+            background: #1e3d5a;
+            color: #7ab3c8;
+        }
+
+        .loading {
+            text-align: center;
+            margin-top: 10px;
+            display: none;
+            color: #007acc;
+        }
+
+        .verification-box {
+            background: #1e3d5a;
+            border: 1px solid #007acc;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 15px;
+        }
+
+        .verification-box h3 {
+            margin-bottom: 10px;
+            color: #007acc;
+        }
+
+        .verification-box p {
+            margin-bottom: 15px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        .small-btn {
+            background: #555;
+            font-size: 12px;
+            padding: 8px 16px;
+            margin-top: 10px;
+            display: inline-block;
+            width: auto;
+            margin-right: 10px;
+        }
+
+        .small-btn:hover {
+            background: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 NobleHyve</h1>
+        
+        <!-- Login Form -->
+        <div id="loginForm">
+            <input type="email" id="email" placeholder="Email" autofocus>
+            <input type="password" id="password" placeholder="Password">
+            <button id="loginBtn" onclick="login()">Login</button>
+            <div class="switch" onclick="showSignup()">Don't have an account? Sign up</div>
+            <div id="loginMessage" class="message" style="display:none;"></div>
+        </div>
+        
+        <!-- Signup Form -->
+        <div id="signupForm" style="display: none;">
+            <input type="email" id="signupEmail" placeholder="Email">
+            <input type="password" id="signupPassword" placeholder="Password (min 6 chars)">
+            <button id="signupBtn" onclick="signup()">Sign Up</button>
+            <div class="switch" onclick="showLogin()">Already have an account? Login</div>
+            <div id="signupMessage" class="message" style="display:none;"></div>
+        </div>
+        
+        <!-- Verification Waiting Screen -->
+        <div id="verificationScreen" style="display: none;">
+            <div class="verification-box">
+                <h3>📧 Verify Your Email</h3>
+                <p>We've sent a confirmation link to <strong id="confirmEmail"></strong></p>
+                <p>Please check your email and click the verification link to activate your account.</p>
+                <button onclick="resendVerification()" class="small-btn">📧 Resend Email</button>
+                <button onclick="showLogin()" class="small-btn" style="background: #555;">Back to Login</button>
+                <div id="verifyMessage" class="message" style="margin-top: 10px; display:none;"></div>
+            </div>
+        </div>
+        
+        <div id="loading" class="loading">Processing...</div>
+    </div>
+
+    <script>
+        const api = window.electronAPI || null;
+        const ipc = (() => { try { return require('electron').ipcRenderer; } catch { return null; } })();
+        
+        function invoke(channel, data) {
+            if (api && api.invoke) return api.invoke(channel, data);
+            if (ipc) return ipc.invoke(channel, data);
+            return Promise.reject(new Error('IPC not available'));
+        }
+        
+        let pendingEmail = null;
+        
+async function login() {
+    const email = document.getElementById('email').value;
+    const password = document.getElementById('password').value;
+    const messageDiv = document.getElementById('loginMessage');
+    
+    if (!email || !password) {
+        showMessage(messageDiv, 'Please fill all fields', 'error');
+        return;
+    }
+    
+    showLoading(true);
+    
+    try {
+        const result = await invoke('auth:login', { email, password });
+        
+        showLoading(false);
+        
+        if (result.success) {
+            showMessage(messageDiv, 'Login successful! Opening editor...', 'success');
+            setTimeout(() => {
+                window.close();
+            }, 1000);
+        } else {
+            if (result.requiresConfirmation) {
+                // Show verification screen instead of error
+                pendingEmail = email;
+                showVerificationScreen(email);
+                showMessage(messageDiv, result.error, 'info');
+            } else {
+                showMessage(messageDiv, result.error, 'error');
+            }
+        }
+    } catch (err) {
+        showLoading(false);
+        showMessage(messageDiv, 'Connection error: ' + err.message, 'error');
+    }
+}
+        async function signup() {
+            const email = document.getElementById('signupEmail').value;
+            const password = document.getElementById('signupPassword').value;
+            const messageDiv = document.getElementById('signupMessage');
+            
+            if (!email || !password) {
+                showMessage(messageDiv, 'Please fill all fields', 'error');
+                return;
+            }
+            
+            if (password.length < 6) {
+                showMessage(messageDiv, 'Password must be at least 6 characters', 'error');
+                return;
+            }
+            
+            showLoading(true);
+            
+            try {
+                const result = await invoke('auth:signup', { email, password });
+                
+                showLoading(false);
+                
+                if (result.success) {
+                    if (result.requiresConfirmation) {
+                        pendingEmail = email;
+                        showVerificationScreen(email);
+                        showMessage(messageDiv, result.message, 'success');
+                    } else {
+                        showMessage(messageDiv, 'Account created! You can now login.', 'success');
+                        setTimeout(() => {
+                            showLogin();
+                        }, 2000);
+                    }
+                } else {
+                    showMessage(messageDiv, result.error, 'error');
+                }
+            } catch (err) {
+                showLoading(false);
+                showMessage(messageDiv, 'Connection error: ' + err.message, 'error');
+            }
+        }
+        
+        async function resendVerification() {
+            if (!pendingEmail) return;
+            
+            const messageDiv = document.getElementById('verifyMessage');
+            showLoading(true);
+            
+            try {
+                const result = await invoke('auth:resend-confirmation', { email: pendingEmail });
+                
+                showLoading(false);
+                
+                if (result.success) {
+                    showMessage(messageDiv, result.message, 'success');
+                } else {
+                    showMessage(messageDiv, result.error, 'error');
+                }
+            } catch (err) {
+                showLoading(false);
+                showMessage(messageDiv, 'Connection error: ' + err.message, 'error');
+            }
+        }
+        
+        async function checkConfirmationStatus() {
+            if (!pendingEmail) return;
+            
+            try {
+                const isConfirmed = await invoke('auth:check-confirmation');
+                
+                if (isConfirmed) {
+                    window.close();
+                }
+            } catch (err) {
+                console.error('Check confirmation error:', err);
+            }
+        }
+        
+        function showVerificationScreen(email) {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('signupForm').style.display = 'none';
+            document.getElementById('verificationScreen').style.display = 'block';
+            document.getElementById('confirmEmail').textContent = email;
+            
+            // Check confirmation status every 5 seconds
+            setInterval(checkConfirmationStatus, 5000);
+        }
+        
+        function showLogin() {
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('signupForm').style.display = 'none';
+            document.getElementById('verificationScreen').style.display = 'none';
+            document.getElementById('signupMessage').style.display = 'none';
+            document.getElementById('loginMessage').style.display = 'none';
+            document.getElementById('email').value = '';
+            document.getElementById('password').value = '';
+        }
+        
+        function showSignup() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('signupForm').style.display = 'block';
+            document.getElementById('verificationScreen').style.display = 'none';
+            document.getElementById('signupEmail').value = '';
+            document.getElementById('signupPassword').value = '';
+        }
+        
+        function showMessage(element, message, type) {
+            element.style.display = 'block';
+            element.textContent = message;
+            element.className = `message ${type}`;
+            setTimeout(() => {
+                element.style.display = 'none';
+            }, 5000);
+        }
+        
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+            const loginBtn = document.getElementById('loginBtn');
+            const signupBtn = document.getElementById('signupBtn');
+            if (loginBtn) loginBtn.disabled = show;
+            if (signupBtn) signupBtn.disabled = show;
+        }
+        
+        // Enter key support
+        document.getElementById('email')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+        document.getElementById('password')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') login();
+        });
+        document.getElementById('signupEmail')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') signup();
+        });
+        document.getElementById('signupPassword')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') signup();
+        });
+        
+        console.log('Login window loaded');
+    </script>
+</body>
+</html>

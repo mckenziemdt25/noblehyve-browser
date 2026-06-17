@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Terminal - NobleHyve</title>
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0c0c0c; height: 100vh; overflow: hidden; }
+        .terminal-container { display: flex; flex-direction: column; height: 100vh; }
+
+        .terminal-header {
+            background: #2d2d2d;
+            padding: 8px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #3e3e3e;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .terminal-title { font-size: 13px; font-weight: bold; color: #fff; font-family: sans-serif; }
+        
+        .shell-selector {
+            display: flex;
+            gap: 4px;
+            background: #1e1e1e;
+            border-radius: 6px;
+            padding: 2px;
+        }
+        .shell-btn {
+            background: transparent;
+            border: none;
+            color: #ccc;
+            padding: 4px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        .shell-btn:hover {
+            background: #3e3e3e;
+        }
+        .shell-btn.active {
+            background: #0e639c;
+            color: white;
+        }
+
+        #terminal-wrapper {
+            flex: 1;
+            padding: 4px;
+            overflow: hidden;
+            background: #0c0c0c;
+        }
+
+        .status-bar {
+            background: #007acc;
+            color: white;
+            padding: 4px 12px;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            flex-shrink: 0;
+            font-family: monospace;
+        }
+        
+        .shell-badge {
+            background: rgba(0,0,0,0.3);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+        }
+    </style>
+</head>
+<body>
+<div class="terminal-container">
+    <div class="terminal-header">
+        <div class="terminal-title">📟 NobleHyve Terminal</div>
+        <div class="shell-selector" id="shellSelector">
+            <button class="shell-btn active" data-shell="powershell">PowerShell</button>
+            <button class="shell-btn" data-shell="cmd">CMD</button>
+        </div>
+    </div>
+
+    <div id="terminal-wrapper"></div>
+
+    <div class="status-bar">
+        <span id="terminalStatus">🟡 Starting...</span>
+        <span>
+            <span class="shell-badge" id="shellBadge">PowerShell</span>
+            <span id="workingDir"></span>
+        </span>
+    </div>
+</div>
+
+<script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+<script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+<script>
+    // Current shell type
+    let currentShell = 'powershell'; // 'powershell' or 'cmd'
+    let currentSessionId = 'main';
+    
+    // Check if terminalAPI is available
+    if (!window.terminalAPI) {
+        console.error('terminalAPI not found!');
+        document.getElementById('terminalStatus').textContent = '🔴 API Error';
+    }
+
+    // ── xterm.js setup ─────────────────────────────────────────────────
+    const term = new Terminal({
+        cursorBlink: true,
+        fontSize: 13,
+        fontFamily: "'Cascadia Code', 'Consolas', 'Monaco', monospace",
+        theme: {
+            background:  '#0c0c0c',
+            foreground:  '#d4d4d4',
+            cursor:      '#ffffff',
+            black:       '#0c0c0c',
+            red:         '#f48771',
+            green:       '#6a9955',
+            yellow:      '#ffaa44',
+            blue:        '#569cd6',
+            magenta:     '#c586c0',
+            cyan:        '#4ec9b0',
+            white:       '#d4d4d4',
+            brightBlack: '#808080',
+        },
+        scrollback: 5000,
+        convertEol: true,
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.open(document.getElementById('terminal-wrapper'));
+    fitAddon.fit();
+
+    // Resize observer
+    new ResizeObserver(() => fitAddon.fit()).observe(document.getElementById('terminal-wrapper'));
+
+    // Tell the PTY when the terminal size changes
+    term.onResize(({ cols, rows }) => {
+        if (window.terminalAPI && window.terminalAPI.resize) {
+            window.terminalAPI.resize(currentSessionId, cols, rows);
+        }
+    });
+
+    // ── PTY wiring ─────────────────────────────────────────────────────
+    term.onData((data) => {
+        if (window.terminalAPI && window.terminalAPI.write) {
+            window.terminalAPI.write(currentSessionId, data);
+        }
+    });
+
+    if (window.terminalAPI && window.terminalAPI.onData) {
+        window.terminalAPI.onData((data) => {
+            term.write(data.data ?? data);
+        });
+    }
+
+    if (window.terminalAPI && window.terminalAPI.onExit) {
+        window.terminalAPI.onExit(({ id, exitCode }) => {
+            if (id === currentSessionId) {
+                document.getElementById('terminalStatus').textContent = '🔴 Session ended';
+                term.write(`\r\n[Session ended — exit code ${exitCode}]\r\n`);
+                term.write(`\r\n\x1b[33mClick the shell button to restart.\x1b[0m\r\n`);
+            }
+        });
+    }
+
+    if (window.terminalAPI && window.terminalAPI.onError) {
+        window.terminalAPI.onError((err) => {
+            term.write(`\r\n[Error: ${err}]\r\n`);
+        });
+    }
+
+    // ── Shell switching ──────────────────────────────────────────────────
+    async function switchShell(shell) {
+        if (shell === currentShell) return;
+        
+        currentShell = shell;
+        document.getElementById('shellBadge').textContent = shell === 'powershell' ? 'PowerShell' : 'CMD';
+        
+        // Update active button style
+        document.querySelectorAll('.shell-btn').forEach(btn => {
+            if (btn.dataset.shell === shell) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        });
+        
+        // Restart session with new shell
+        await startSession();
+    }
+    
+    // Get shell command based on type
+    function getShellCommand() {
+        if (currentShell === 'powershell') {
+            return 'powershell.exe';
+        } else {
+            return 'cmd.exe';
+        }
+    }
+    
+    function getShellArgs() {
+        if (currentShell === 'powershell') {
+            return ['-NoLogo', '-ExecutionPolicy', 'RemoteSigned'];
+        } else {
+            return [];
+        }
+    }
+
+    // ── Session management ──────────────────────────────────────────────────
+    async function startSession() {
+        document.getElementById('terminalStatus').textContent = '🟡 Starting...';
+        
+        if (!window.terminalAPI) {
+            document.getElementById('terminalStatus').textContent = '🔴 API Missing';
+            term.write('\r\n\x1b[31mERROR: terminalAPI not loaded!\x1b[0m\r\n');
+            return;
+        }
+        
+        // Kill existing session if any
+        try {
+            if (window.terminalAPI.kill) {
+                await window.terminalAPI.kill(currentSessionId);
+            }
+        } catch(e) {}
+        
+        // Clear terminal
+        term.clear();
+        
+        // Get current working directory
+        let cwd = null;
+        try {
+            const cwdResult = await window.terminalAPI.getCwd();
+            if (cwdResult && cwdResult.success) {
+                cwd = cwdResult.path;
+                document.getElementById('workingDir').textContent = cwd;
+            }
+        } catch (err) {
+            console.error('getCwd error:', err);
+        }
+        
+        // Create new session with selected shell
+        try {
+            const shellCmd = getShellCommand();
+            const shellArgs = getShellArgs();
+            
+            console.log('Starting session with:', shellCmd, shellArgs);
+            
+            const result = await window.terminalAPI.createSession(currentSessionId, shellCmd, cwd);
+            
+            if (result && result.success) {
+                document.getElementById('terminalStatus').textContent = '🟢 Ready';
+                const shellName = currentShell === 'powershell' ? 'PowerShell' : 'Command Prompt';
+                term.write(`\x1b[32m✓ ${shellName} Ready\x1b[0m\r\n`);
+                if (currentShell === 'powershell') {
+                    term.write('\x1b[36mType commands like "dir", "cd", or "npm install"\x1b[0m\r\n');
+                    term.write('\x1b[36mSwitch to CMD using the button above\x1b[0m\r\n\r\n');
+                } else {
+                    term.write('\x1b[36mType commands like "dir", "cd", or "npm install"\x1b[0m\r\n');
+                    term.write('\x1b[36mSwitch to PowerShell using the button above\x1b[0m\r\n\r\n');
+                }
+            } else {
+                document.getElementById('terminalStatus').textContent = '🔴 Failed';
+                term.write(`\r\n\x1b[31mCould not start ${currentShell}: ${result?.error || 'Unknown error'}\x1b[0m\r\n`);
+                term.write(`\r\n\x1b[33mTrying fallback...\x1b[0m\r\n`);
+                
+                // Fallback to other shell
+                const fallbackShell = currentShell === 'powershell' ? 'cmd.exe' : 'powershell.exe';
+                const fallbackResult = await window.terminalAPI.createSession(currentSessionId, fallbackShell, cwd);
+                if (fallbackResult && fallbackResult.success) {
+                    document.getElementById('terminalStatus').textContent = '🟢 Ready (Fallback)';
+                    term.write(`\x1b[32m✓ ${fallbackShell} Ready (Fallback)\x1b[0m\r\n`);
+                }
+            }
+        } catch (err) {
+            console.error('createSession error:', err);
+            document.getElementById('terminalStatus').textContent = '🔴 Error';
+            term.write(`\r\n\x1b[31mError creating session: ${err.message}\x1b[0m\r\n`);
+        }
+
+        term.focus();
+    }
+
+    // ── Event listeners for shell switching ──────────────────────────────────
+    document.querySelectorAll('.shell-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            switchShell(btn.dataset.shell);
+        });
+    });
+
+    // Kill PTY on close
+    window.addEventListener('beforeunload', () => {
+        try { 
+            if (window.terminalAPI && window.terminalAPI.kill) {
+                window.terminalAPI.kill(currentSessionId); 
+            }
+        } catch (_) {}
+    });
+
+    // Start the terminal
+    startSession();
+</script>
+</body>
+</html>

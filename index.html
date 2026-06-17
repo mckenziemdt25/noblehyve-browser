@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>NobleHyve Browser</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Toolbar -->
+    <div class="toolbar">
+        <button id="backBtn" title="Back">◀</button>
+        <button id="forwardBtn" title="Forward">▶</button>
+        <button id="refreshBtn" title="Refresh">⟳</button>
+        <input type="text" id="urlBar" placeholder="Search or enter web address">
+        <button id="goBtn" title="Go">Go</button>
+        <select id="quickSearchEngine" class="quick-search" title="Search Engine">
+            <option value="duckduckgo">🦆 DuckDuckGo</option>
+            <option value="google">🔴 Google</option>
+            <option value="bing">🔵 Bing</option>
+            <option value="yahoo">💜 Yahoo</option>
+            <option value="brave">🦁 Brave</option>
+            <option value="qwant">🇫🇷 Qwant</option>
+            <option value="ecosia">🌳 Ecosia</option>
+            <option value="startpage">🛡️ Startpage</option>
+        </select>
+        <button id="newTabBtn" title="New Tab">+</button>
+        <button id="privateTabBtn" title="Private Mode" class="private-btn">👤 Private</button>
+        <button id="editorBtn" title="Code Editor" class="editor-btn">📝 Editor</button>
+        <button id="terminalBtn" title="Terminal" class="terminal-btn">⌨️ Terminal</button>
+        <button id="settingsBtn" title="Settings">⚙️</button>
+        <button id="moreBtn" title="Settings and more">⋯</button>
+    </div>
+
+    <!-- Bookmark Bar -->
+    <div class="bookmark-bar" id="bookmarkBar">
+        <div class="bookmark-toolbar">
+            <button id="addBookmarkBtn" title="Add bookmark">⭐ <span>Add</span></button>
+            <button id="manageBookmarksBtn" title="Manage bookmarks">📁 <span>Manage</span></button>
+            <div class="bookmark-folder-indicator" id="bookmarkFolderIndicator" style="display:none"></div>
+        </div>
+        <div id="bookmarksList" class="bookmarks-list">
+            <!-- dynamic bookmarks appear here -->
+        </div>
+    </div>
+
+    <!-- Settings and More Menu -->
+    <div id="moreMenu" class="more-menu" style="display: none;">
+        <button data-action="new-tab">New tab</button>
+        <button data-action="private-tab">New private tab</button>
+        <button data-action="history">History</button>
+        <button data-action="downloads">Downloads</button>
+        <div class="menu-divider"></div>
+        <button data-action="zoom-out">Zoom out</button>
+        <button data-action="zoom-reset">Reset zoom</button>
+        <button data-action="zoom-in">Zoom in</button>
+        <button data-action="find">Find on page</button>
+        <button data-action="print">Print</button>
+        <div class="menu-divider"></div>
+        <button data-action="devtools">Developer tools</button>
+        <button data-action="settings">Settings</button>
+    </div>
+
+    <!-- Tabs Container -->
+    <div class="tabs-container">
+        <div id="tabs" class="tabs"></div>
+    </div>
+
+    <!-- Browser Container -->
+    <div id="browserContainer" style="display: none;"></div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="dashboard">
+        <div class="dashboard-header">
+            <h1>NobleHyve Browser</h1>
+            <p class="tagline">The hyve is always noble</p>
+            <div class="start-search">
+                <input type="text" id="startSearchInput" placeholder="Search the web or enter a URL">
+                <button id="startSearchBtn">Search</button>
+            </div>
+            <div class="quick-links">
+                <button class="quick-link" data-url="https://www.microsoft.com/edge">Edge</button>
+                <button class="quick-link" data-url="https://github.com">GitHub</button>
+                <button class="quick-link" data-url="https://news.ycombinator.com">Hacker News</button>
+                <button class="quick-link" data-url="https://dev.to">DEV.to</button>
+            </div>
+        </div>
+
+        <!-- Security Dashboard -->
+        <div class="dashboard-section security-dashboard">
+            <div class="security-header">
+                <h3>🛡️ Security Status</h3>
+                <span id="securityScore" class="security-score">100</span>
+            </div>
+            <div class="security-features">
+                <div class="feature"><span>🎣 Phishing Blocking</span><span class="status active">Active</span></div>
+                <div class="feature"><span>⚡ JIT-less Mode</span><span class="status active">Active</span></div>
+                <div class="feature"><span>🚨 Scareware Detection</span><span class="status active">Active</span></div>
+                <div class="feature"><span>📦 Container Isolation</span><span class="status active">Active</span></div>
+                <div class="feature"><span>⌨️ Typo Protection</span><span class="status active">Active</span></div>
+                <div class="feature"><span>🔑 Password Breach Alerts</span><span class="status active">Active</span></div>
+                <div class="feature"><span>👁️ Tracking Prevention</span><span class="status active">Active</span></div>
+                <div class="feature"><span>🙈 Privacy Mode</span><span class="status active">Available</span></div>
+                <div class="feature"><span>☁️ Cloud Reputation</span><span class="status active">Active</span></div>
+            </div>
+            <button id="scanNowBtn" class="primary-btn">🔍 Scan Current Page</button>
+        </div>
+
+        <!-- Stats Section -->
+        <div class="dashboard-section">
+            <h3>📊 Session Stats</h3>
+            <div class="stats-grid">
+                <div class="stat-card"><span class="stat-label">Open Tabs</span><span class="stat-value" id="tabCount">0</span></div>
+                <div class="stat-card"><span class="stat-label">Session Duration</span><span class="stat-value" id="sessionTime">0m</span></div>
+                <div class="stat-card"><span class="stat-label">Tabs Created</span><span class="stat-value" id="totalTabs">0</span></div>
+            </div>
+        </div>
+
+        <!-- Download Manager Section (new) -->
+        <div class="dashboard-section" id="downloadsSection">
+            <h3>⬇️ Downloads</h3>
+            <div id="downloadsList" class="downloads-list">
+                <div class="empty-message">No downloads yet</div>
+            </div>
+            <button id="openDownloadsFolderBtn" class="secondary-btn">Open Downloads Folder</button>
+        </div>
+
+        <!-- Most Visited Sites -->
+        <div class="dashboard-section">
+            <h3>⭐ Most Visited</h3>
+            <div id="mostVisitedList" class="most-visited-list"><div class="empty-message">Browse websites to see your most visited sites</div></div>
+        </div>
+
+        <!-- Developer News -->
+        <div class="dashboard-section">
+            <h3>📰 Developer News</h3>
+            <div class="news-sources">
+                <button class="news-source-btn active" data-source="all">All</button>
+                <button class="news-source-btn" data-source="github">🐙 GitHub</button>
+                <button class="news-source-btn" data-source="devto">💻 DEV.to</button>
+                <button class="news-source-btn" data-source="hacker">🔥 Hacker News</button>
+            </div>
+            <div id="newsList" class="news-list"><div class="news-item">Loading news...</div></div>
+        </div>
+    </div>
+
+    <!-- Settings Panel - Edge-like Design -->
+    <div id="settingsPanel" class="settings-panel" style="display: none;">
+        <div class="settings-content settings-layout">
+            <div class="settings-sidebar">
+                <div class="settings-header"><h2>Settings</h2></div>
+                <div class="settings-nav">
+                    <button class="settings-nav-item active" data-category="appearance"><span class="nav-icon">🎨</span> Appearance</button>
+                    <button class="settings-nav-item" data-category="search"><span class="nav-icon">🔍</span> Search</button>
+                    <button class="settings-nav-item" data-category="startup"><span class="nav-icon">🚀</span> Startup</button>
+                    <button class="settings-nav-item" data-category="privacy"><span class="nav-icon">🛡️</span> Privacy & Security</button>
+                    <button class="settings-nav-item" data-category="cookies"><span class="nav-icon">🍪</span> Cookies & Site Data</button>
+                    <button class="settings-nav-item" data-category="history"><span class="nav-icon">🕒</span> History</button>
+                    <button class="settings-nav-item" data-category="downloads"><span class="nav-icon">⬇️</span> Downloads</button>
+                    <button class="settings-nav-item" data-category="external"><span class="nav-icon">🌐</span> External Browser</button>
+                    <button class="settings-nav-item" data-category="cloud"><span class="nav-icon">☁️</span> Cloud Storage</button>
+                    <button class="settings-nav-item" data-category="premium"><span class="nav-icon">⭐</span> Premium</button>
+                    <button class="settings-nav-item" data-category="advanced"><span class="nav-icon">🔧</span> Advanced</button>
+                </div>
+            </div>
+            <div class="settings-main">
+                <div class="settings-header">
+                    <h2 id="settingsCategoryTitle">Appearance</h2>
+                    <button id="closeSettingsBtn" class="close-btn">&times;</button>
+                </div>
+                <div class="settings-body" id="settingsBody">
+                    <!-- Appearance -->
+                    <div class="settings-category active" id="cat-appearance">
+                        <div class="setting-group">
+                            <label class="setting-label">Theme</label>
+                            <div class="toggle-group">
+                                <label class="toggle-row"><span>Dark mode</span><label class="toggle-switch"><input type="checkbox" id="themeToggle" checked><span class="toggle-slider"></span></label></label>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Page Zoom</label>
+                            <select id="defaultZoom" class="setting-select">
+                                <option value="-1">80%</option>
+                                <option value="-0.5">90%</option>
+                                <option value="0" selected>100%</option>
+                                <option value="0.5">110%</option>
+                                <option value="1">125%</option>
+                                <option value="1.5">150%</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Search -->
+                    <div class="settings-category" id="cat-search">
+                        <div class="setting-group">
+                            <label class="setting-label">Search Engine</label>
+                            <select id="searchEngine" class="setting-select">
+                                <option value="duckduckgo">DuckDuckGo (Private)</option>
+                                <option value="google">Google</option>
+                                <option value="bing">Bing</option>
+                                <option value="yahoo">Yahoo</option>
+                                <option value="brave">Brave Search</option>
+                                <option value="qwant">Qwant</option>
+                                <option value="ecosia">Ecosia</option>
+                                <option value="startpage">Startpage</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Startup -->
+                    <div class="settings-category" id="cat-startup">
+                        <div class="setting-group">
+                            <label class="setting-label">Startup behavior</label>
+                            <select id="startupBehavior" class="setting-select">
+                                <option value="dashboard">Open NobleHyve start page</option>
+                                <option value="homepage">Open homepage</option>
+                                <option value="restore">Restore previous tabs</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Homepage</label>
+                            <input type="text" id="homepageUrl" class="setting-input" placeholder="https://www.google.com">
+                        </div>
+                    </div>
+
+                    <!-- Privacy & Security -->
+                    <div class="settings-category" id="cat-privacy">
+                        <div class="setting-group">
+                            <label class="setting-label">Privacy</label>
+                            <div class="toggle-group">
+                                <label class="toggle-row"><span>Block tracking scripts</span><label class="toggle-switch"><input type="checkbox" id="blockTracking"><span class="toggle-slider"></span></label></label>
+                                <label class="toggle-row"><span>Send "Do Not Track" request</span><label class="toggle-switch"><input type="checkbox" id="doNotTrack"><span class="toggle-slider"></span></label></label>
+                                <label class="toggle-row"><span>Clear history on exit</span><label class="toggle-switch"><input type="checkbox" id="clearHistoryOnExit"><span class="toggle-slider"></span></label></label>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Security</label>
+                            <div class="toggle-group">
+                                <label class="toggle-row"><span>Enable safe browsing checks</span><label class="toggle-switch"><input type="checkbox" id="safeBrowsing" checked><span class="toggle-slider"></span></label></label>
+                                <label class="toggle-row"><span>Block known malware sites</span><label class="toggle-switch"><input type="checkbox" id="blockMalware" checked><span class="toggle-slider"></span></label></label>
+                                <label class="toggle-row"><span>Warn about phishing sites</span><label class="toggle-switch"><input type="checkbox" id="warnPhishing" checked><span class="toggle-slider"></span></label></label>
+                                <label class="toggle-row"><span>Block pop-ups</span><label class="toggle-switch"><input type="checkbox" id="blockPopups"><span class="toggle-slider"></span></label></label>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">HTTPS-Only Mode</label>
+                            <select id="httpsOnlyMode" class="setting-select">
+                                <option value="off">Off</option>
+                                <option value="on">Always upgrade to HTTPS</option>
+                                <option value="warn">Warn before loading HTTP</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Clear browsing data</label>
+                            <div class="action-row">
+                                <button id="clearBrowserDataBtn" class="setting-btn danger-btn">Clear data</button>
+                                <span class="setting-hint">Clears cookies, cache, and site data</span>
+                            </div>
+                            <div class="action-row" style="margin-top:8px">
+                                <label class="setting-hint">Clear on exit:</label>
+                                <select id="clearOnExitOptions" class="setting-select" style="width:auto;flex:1">
+                                    <option value="none">Nothing</option>
+                                    <option value="history">History only</option>
+                                    <option value="all">All (history, cache, cookies)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cookies & Site Data -->
+                    <div class="settings-category" id="cat-cookies">
+                        <div class="setting-group">
+                            <label class="setting-label">Cookies and site data</label>
+                            <div class="action-row">
+                                <button id="viewCookiesBtn" class="setting-btn">Manage cookies</button>
+                                <button id="clearAllCookiesBtn" class="setting-btn danger-btn">Clear all cookies</button>
+                            </div>
+                        </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Cookie permissions</label>
+                            <div class="toggle-group">
+                                <label class="toggle-row"><span>Allow sites to save cookies</span><label class="toggle-switch"><input type="checkbox" id="allowCookies" checked><span class="toggle-slider"></span></label></label>
+                                <label class="toggle-row"><span>Block third-party cookies</span><label class="toggle-switch"><input type="checkbox" id="blockThirdParty"><span class="toggle-slider"></span></label></label>
+                            </div>
+                        </div>
+                        <div class="setting-group" id="cookieListContainer">
+                            <label class="setting-label">Cookies stored by sites</label>
+                            <div id="cookieList" class="cookie-list"><div class="empty-message">Loading cookies...</div></div>
+                        </div>
+                    </div>
+
+                    <!-- History -->
+                    <div class="settings-category" id="cat-history">
+                        <div class="setting-group">
+                            <label class="setting-label">Browsing History</label>
+                            <input type="text" id="settingsHistorySearch" class="modal-search-input" placeholder="Search history..." style="width:100%;margin-bottom:12px">
+                            <div id="historySettingsContainer" class="history-list-container" style="max-height:360px;overflow-y:auto"></div>
+                            <div class="action-row" style="margin-top:12px;gap:8px;flex-wrap:wrap">
+                                <button id="settingsHistoryClearRange" class="setting-btn">Clear range</button>
+                                <button id="settingsHistoryClearAll" class="setting-btn danger-btn">Clear all</button>
+                                <button id="settingsHistoryOpenTab" class="setting-btn primary-btn">Open in tab</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Downloads -->
+                    <div class="settings-category" id="cat-downloads">
+                        <div class="setting-group">
+                            <label class="setting-label">Download location</label>
+                            <div class="action-row">
+                                <input type="text" id="downloadPath" class="setting-input" placeholder="Default download folder">
+                                <button id="chooseDownloadPathBtn" class="setting-btn">Browse</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- External Browser -->
+                    <div class="settings-category" id="cat-external">
+                        <div class="setting-group">
+                            <label class="setting-label">External browser for sign-in</label>
+                            <select id="externalBrowser" class="setting-select">
+                                <option value="default">Default browser</option>
+                                <option value="edge">Microsoft Edge</option>
+                                <option value="chrome">Google Chrome</option>
+                                <option value="firefox">Mozilla Firefox</option>
+                            </select>
+                        </div>
+                        <div class="setting-group">
+                            <div class="toggle-group">
+                                <label class="toggle-row"><span>Auto-redirect sign-in pages (no prompt)</span><label class="toggle-switch"><input type="checkbox" id="autoRedirectAuth"><span class="toggle-slider"></span></label></label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Cloud Storage -->
+                    <div class="settings-category" id="cat-cloud">
+                        <div class="setting-group">
+                            <label class="setting-label">Cloudflare R2 Storage</label>
+                            <div class="cloud-status" id="cloudStatus">
+                                <span id="cloudConnectionStatus">Not configured</span>
+                                <button id="testCloudConnectionBtn" class="setting-btn" style="margin-top:8px">Test Connection</button>
+                            </div>
+                            <div id="cloudCredsForm" style="margin-top:12px">
+                                <input type="text" id="cloudAccountId" class="setting-input" placeholder="Account ID" style="margin-bottom:8px">
+                                <input type="text" id="cloudAccessKey" class="setting-input" placeholder="Access Key ID" style="margin-bottom:8px">
+                                <input type="password" id="cloudSecretKey" class="setting-input" placeholder="Secret Access Key" style="margin-bottom:8px">
+                                <button id="saveCloudCredsBtn" class="setting-btn" style="width:100%;margin-bottom:4px">Save Credentials</button>
+                                <button id="clearCloudCredsBtn" class="setting-btn" style="width:100%">Clear Credentials</button>
+                            </div>
+                            <div id="cloudStorageInfo" class="storage-info" style="margin-top:12px;font-size:12px;color:#888"></div>
+                        </div>
+                    </div>
+
+                    <!-- Premium -->
+                    <div class="settings-category" id="cat-premium">
+                        <div class="setting-group">
+                            <label class="setting-label">NobleHyve Premium</label>
+                            <div class="premium-status" id="premiumStatus">
+                                <span id="premiumBadge">Free Version</span>
+                                <span id="premiumFeatures">Cloud backup, Encrypted sync, and more!</span>
+                            </div>
+                            <div id="usageInfo" style="margin:8px 0;padding:8px;background:rgba(255,152,0,0.1);border-radius:6px;font-size:11px;color:#ff9800">
+                                <div>☁️ Cloud saves: <span id="usageCloud">0/5 used</span></div>
+                                <div>🔒 Local encrypts: <span id="usageEncrypt">0/5 used</span></div>
+                                <div>📦 Max file size: 5MB on free tier</div>
+                            </div>
+                            <div id="licenseSection">
+                                <input type="text" id="licenseKey" class="setting-input" placeholder="Enter license key" style="margin-bottom:8px">
+                                <button id="activateLicenseBtn" class="setting-btn" style="width:100%;margin-bottom:4px">Activate Premium</button>
+                                <button id="deactivateLicenseBtn" class="setting-btn" style="width:100%;display:none">Deactivate</button>
+                            </div>
+                            <div id="buyLicenseSection" style="margin-top:12px">
+                                <button id="buyLicenseBtn" class="setting-btn premium-btn" style="width:100%">Get Premium License</button>
+                            </div>
+                            <div id="licenseMessage" class="license-message" style="margin-top:10px;font-size:12px"></div>
+                        </div>
+                    </div>
+
+                    <!-- Advanced -->
+                    <div class="settings-category" id="cat-advanced">
+                        <div class="setting-group">
+                            <label class="setting-label">System</label>
+                            <div class="toggle-group">
+                                <label class="toggle-row"><span>Auto-update browser</span><label class="toggle-switch"><input type="checkbox" id="enableAutoUpdates" checked><span class="toggle-slider"></span></label></label>
+                                <label class="toggle-row"><span>Hardware acceleration</span><label class="toggle-switch"><input type="checkbox" id="enableHardwareAcceleration" checked><span class="toggle-slider"></span></label></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="settings-footer">
+                    <button id="saveSettingsBtn" class="setting-btn primary-btn">Save</button>
+                    <button id="resetSettingsBtn" class="setting-btn">Reset</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Panel - full-page tab -->
+    <div id="historyPanel" class="settings-panel" style="display: none;">
+        <div class="settings-content settings-layout">
+            <div class="history-panel-main settings-main" style="max-width: 100%;">
+                <div class="settings-header">
+                    <h2>🕒 History</h2>
+                    <button id="closeHistoryBtn" class="close-btn">&times;</button>
+                </div>
+                <div class="settings-body">
+                    <div class="history-toolbar-row" style="display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+                        <input type="text" id="historyPanelSearch" class="modal-search-input" placeholder="Search history..." style="flex:1;min-width:200px">
+                        <button id="historyPanelClearRange" class="setting-btn">Clear range</button>
+                        <button id="historyPanelClearAll" class="setting-btn danger-btn">Clear all</button>
+                    </div>
+                    <div id="historyPanelContainer" class="history-list-container" style="max-height:calc(100vh - 280px);overflow-y:auto"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bookmark Manager Modal -->
+    <div id="bookmarkManager" class="modal-overlay" style="display:none">
+        <div class="modal-content bookmark-manager-modal">
+            <div class="modal-header">
+                <h2>Bookmark Manager</h2>
+                <button class="close-btn modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="bookmark-toolbar-row">
+                    <input type="text" id="bookmarkSearch" class="modal-search-input" placeholder="Search bookmarks...">
+                    <div class="bookmark-toolbar-actions">
+                        <button id="bmNewFolderBtn" class="setting-btn">New folder</button>
+                        <button id="bmImportBtn" class="setting-btn">Import</button>
+                        <button id="bmExportBtn" class="setting-btn">Export</button>
+                    </div>
+                </div>
+                <div class="bookmark-tree-container">
+                    <div class="bookmark-tree" id="bookmarkTree"></div>
+                    <div class="bookmark-list-panel" id="bookmarkListPanel"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Manager Modal -->
+    <div id="historyManager" class="modal-overlay" style="display:none">
+        <div class="modal-content history-manager-modal">
+            <div class="modal-header">
+                <h2>History</h2>
+                <button class="close-btn modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="history-toolbar-row">
+                    <input type="text" id="historySearch" class="modal-search-input" placeholder="Search history...">
+                    <div class="history-toolbar-actions">
+                        <button id="historyClearRange" class="setting-btn">Clear range</button>
+                        <button id="historyClearAll" class="setting-btn danger-btn">Clear all</button>
+                    </div>
+                </div>
+                <div id="historyListContainer" class="history-list-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cookie Manager Modal -->
+    <div id="cookieManager" class="modal-overlay" style="display:none">
+        <div class="modal-content cookie-manager-modal">
+            <div class="modal-header">
+                <h2>Cookies and Site Data</h2>
+                <button class="close-btn modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="cookie-toolbar-row">
+                    <input type="text" id="cookieSearch" class="modal-search-input" placeholder="Search sites...">
+                    <button id="cookieClearAll" class="setting-btn danger-btn">Remove all</button>
+                </div>
+                <div id="cookieListContainer" class="cookie-list-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Security Alert Modal -->
+    <div id="securityAlert" class="security-alert" style="display: none;">
+        <div class="alert-content">
+            <div class="alert-icon">⚠️</div>
+            <h2 id="alertTitle">Security Warning</h2>
+            <p id="alertMessage"></p>
+            <div class="alert-buttons">
+                <button id="alertBackBtn">Go Back</button>
+                <button id="alertProceedBtn" class="danger">Proceed Anyway</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Typo Warning Modal -->
+    <div id="typoWarning" class="security-alert" style="display: none;">
+        <div class="alert-content">
+            <div class="alert-icon">⌨️</div>
+            <h2>Typo Detected</h2>
+            <p id="typoMessage"></p>
+            <p id="typoSuggested" class="suggestion"></p>
+            <div class="alert-buttons">
+                <button id="typoBackBtn">Go Back</button>
+                <button id="typoCorrectBtn" class="primary">Go to Correct Site</button>
+                <button id="typoProceedBtn" class="danger">Continue Anyway</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Find Bar -->
+    <div id="findBar" class="find-bar" style="display: none;">
+        <input id="findInput" type="text" placeholder="Find on page">
+        <button id="closeFindBtn">×</button>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

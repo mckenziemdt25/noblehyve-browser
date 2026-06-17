@@ -1,0 +1,9 @@
+# .gitignore - Prevent committing sensitive files
+.env
+node_modules/
+.DS_Store
+*.log
+dist/
+out/
+tools/private.pem
+tools/last-license.txt
