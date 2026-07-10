@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>NobleHyve Data Pipeline</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 24px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .header h1 { font-size: 1.5em; }
+        .status { display: flex; gap: 16px; align-items: center; }
+        .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+        .status-dot.connected { background: #3fb950; }
+        .status-dot.disconnected { background: #da3633; }
+        .status-dot.db { background: #58a6ff; }
+        .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+        .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }
+        .card h3 { font-size: 0.85em; color: #8b949e; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .card .count { font-size: 2em; font-weight: 600; }
+        .card .count.crashes { color: #ff7b72; }
+        .card .count.editor { color: #58a6ff; }
+        .card .count.terminal { color: #3fb950; }
+        .card .count.browser { color: #d2a8ff; }
+        .retention { font-size: 0.7em; color: #484f58; margin-top: 4px; }
+        .event-log { background: #161b22; border: 1px solid #30363d; border-radius: 8px; }
+        .event-log h3 { padding: 16px; border-bottom: 1px solid #30363d; font-size: 0.9em; display: flex; justify-content: space-between; align-items: center; }
+        .event-list { max-height: 500px; overflow-y: auto; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 0.8em; }
+        .event { padding: 8px 16px; border-bottom: 1px solid #21262d; display: flex; gap: 12px; align-items: center; }
+        .event:hover { background: #1c2128; }
+        .event-time { color: #484f58; white-space: nowrap; min-width: 80px; }
+        .event-topic { font-weight: 600; min-width: 90px; }
+        .event-topic.crashes { color: #ff7b72; }
+        .event-topic.editor { color: #58a6ff; }
+        .event-topic.terminal { color: #3fb950; }
+        .event-topic.browser { color: #d2a8ff; }
+        .event-detail { color: #8b949e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+        .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7em; font-weight: 600; min-width: 50px; text-align: center; }
+        .pill.critical { background: rgba(255,123,114,0.2); color: #ff7b72; }
+        .pill.normal { background: rgba(139,148,158,0.2); color: #8b949e; }
+        .pill.low { background: rgba(72,79,88,0.2); color: #484f58; }
+        .actions { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+        .btn { padding: 10px 20px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 0.85em; }
+        .btn:hover { background: #30363d; }
+        .btn.primary { background: #238636; border-color: #238636; color: #fff; }
+        .btn.primary:hover { background: #2ea043; }
+        .btn.danger { background: #da3633; border-color: #da3633; color: #fff; }
+        .btn.danger:hover { background: #f85149; }
+        .btn.purple { background: #8957e5; border-color: #8957e5; color: #fff; }
+        .btn.purple:hover { background: #a371f7; }
+        .empty { padding: 32px; text-align: center; color: #484f58; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.7em; font-weight: 600; }
+        .badge.crashes { background: rgba(255,123,114,0.15); color: #ff7b72; }
+        .badge.editor { background: rgba(88,166,255,0.15); color: #58a6ff; }
+        .badge.terminal { background: rgba(63,185,80,0.15); color: #3fb950; }
+        .badge.browser { background: rgba(210,168,255,0.15); color: #d2a8ff; }
+        select.filter { padding: 8px 12px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; font-size: 0.85em; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Data Pipeline</h1>
+        <div class="status">
+            <span id="kafkaStatus"><span class="status-dot disconnected"></span> Kafka</span>
+            <span id="dbStatus"><span class="status-dot disconnected"></span> Local DB</span>
+            <span id="eventCount">0 events</span>
+        </div>
+    </div>
+
+    <div class="cards">
+        <div class="card">
+            <h3>Crash Events <span class="pill critical">permanent</span></h3>
+            <div class="count crashes" id="crashCount">0</div>
+        </div>
+        <div class="card">
+            <h3>Editor Events <span class="pill normal">24h</span></h3>
+            <div class="count editor" id="editorCount">0</div>
+        </div>
+        <div class="card">
+            <h3>Terminal Events <span class="pill normal">24h</span></h3>
+            <div class="count terminal" id="terminalCount">0</div>
+        </div>
+        <div class="card">
+            <h3>Browser Events <span class="pill normal">24h</span></h3>
+            <div class="count browser" id="browserCount">0</div>
+        </div>
+    </div>
+
+    <div class="actions">
+        <select id="severityFilter" class="filter" onchange="loadEvents()">
+            <option value="all">All events</option>
+            <option value="critical">Critical only</option>
+            <option value="normal">Normal only</option>
+            <option value="low">Low only</option>
+        </select>
+        <button class="btn primary" onclick="exportForJupyter()">Export for Jupyter</button>
+        <button class="btn purple" onclick="openKafkaUI()">Open Kafka UI</button>
+        <button class="btn" onclick="refresh()">Refresh</button>
+    </div>
+
+    <div class="event-log">
+        <h3>
+            <span>Event Log</span>
+            <span style="font-size:0.75em;color:#484f58;font-weight:400">
+                Critical stored permanently · Normal/low expire after 24h
+            </span>
+        </h3>
+        <div class="event-list" id="eventList">
+            <div class="empty">Loading events...</div>
+        </div>
+    </div>
+
+    <script>
+        let lastRefresh = 0;
+
+        async function loadEvents() {
+            const severity = document.getElementById('severityFilter').value;
+            const api = window.electronAPI;
+            if (!api || !api.getPipelineEvents) return;
+
+            const events = await api.getPipelineEvents(200, severity === 'all' ? null : severity);
+            const counts = await api.getPipelineCounts();
+
+            const list = document.getElementById('eventList');
+            const countMap = {};
+            for (const c of counts) {
+                const key = c.topic;
+                countMap[key] = (countMap[key] || 0) + c.count;
+            }
+
+            document.getElementById('crashCount').textContent = countMap['crashes'] || 0;
+            document.getElementById('editorCount').textContent = countMap['editor'] || 0;
+            document.getElementById('terminalCount').textContent = countMap['terminal'] || 0;
+            document.getElementById('browserCount').textContent = countMap['browser'] || 0;
+            document.getElementById('eventCount').textContent = (events.length || 0) + ' shown';
+
+            if (!events || events.length === 0) {
+                list.innerHTML = '<div class="empty">No events yet. Interact with the app to generate events.</div>';
+                return;
+            }
+
+            list.innerHTML = events.map(e => {
+                let data;
+                try { data = JSON.parse(e.data); } catch { data = {}; }
+                const detail = data.action || data.type || data.message || data.url || JSON.stringify(data).slice(0, 80);
+                const ts = new Date(e.created_at * 1000).toLocaleTimeString();
+                return `
+                    <div class="event">
+                        <span class="event-time">${ts}</span>
+                        <span class="event-topic ${e.topic}"><span class="badge ${e.topic}">${e.topic}</span></span>
+                        <span class="pill ${e.severity}">${e.severity}</span>
+                        <span class="event-detail">${escapeHtml(detail)}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function exportForJupyter() {
+            const api = window.electronAPI;
+            if (!api || !api.exportPipelineJson) return;
+            const events = await api.exportPipelineJson(document.getElementById('severityFilter').value === 'all' ? null : document.getElementById('severityFilter').value);
+            if (!events || events.length === 0) {
+                alert('No events to export.');
+                return;
+            }
+            const json = JSON.stringify(events.map(e => ({ ...e, data: JSON.parse(e.data) })), null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `noblehyve-pipeline-export-${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function openKafkaUI() {
+            if (window.electronAPI?.openPipelineDashboard) {
+                window.electronAPI.openPipelineDashboard();
+            } else {
+                window.open('http://localhost:8080', '_blank');
+            }
+        }
+
+        function refresh() {
+            loadEvents();
+            checkDb();
+            checkKafka();
+        }
+
+        async function checkKafka() {
+            try {
+                const resp = await fetch('http://localhost:8080').catch(() => null);
+                const el = document.getElementById('kafkaStatus');
+                if (resp && resp.ok) {
+                    el.innerHTML = '<span class="status-dot connected"></span> Kafka Connected';
+                } else {
+                    el.innerHTML = '<span class="status-dot disconnected"></span> Kafka Offline';
+                }
+            } catch {}
+        }
+
+        function checkDb() {
+            const el = document.getElementById('dbStatus');
+            if (window.electronAPI?.getPipelineEvents) {
+                el.innerHTML = '<span class="status-dot db"></span> Local DB Active';
+            } else {
+                el.innerHTML = '<span class="status-dot disconnected"></span> Local DB N/A';
+            }
+        }
+
+        checkKafka();
+        setInterval(checkKafka, 15000);
+        checkDb();
+        loadEvents();
+        setInterval(loadEvents, 5000);
+    </script>
+</body>
+</html>

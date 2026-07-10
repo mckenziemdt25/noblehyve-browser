@@ -7,3 +7,8 @@ dist/
 out/
 tools/private.pem
 tools/last-license.txt
+
+# Code signing certificate — never commit this
+build/*.pfx
+build/*.p12
+build/*.cert

@@ -5,6 +5,12 @@
 //
 // Usage: node tools/generate-keypair.js
 
+// ========================================================================
+// DEPRECATED — replaced by Gumroad license verification
+// RSA keypairs are no longer needed. Gumroad handles key generation.
+// See SETUP-GUMROAD.md for the new setup.
+// ========================================================================
+
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');

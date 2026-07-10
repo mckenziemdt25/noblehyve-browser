@@ -3,7 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('terminalAPI', {
     // PTY methods
-    createSession: (id, shell, cwd) => ipcRenderer.invoke('terminal:create', { id, shell, cwd }),
+    createSession: (id, shell, cwd, cols, rows) => ipcRenderer.invoke('terminal:create', { id, shell, cwd, cols, rows }),
     write: (id, data) => ipcRenderer.send('terminal:write', { id, data }),
     resize: (id, cols, rows) => ipcRenderer.send('terminal:resize', { id, cols, rows }),
     kill: (id) => ipcRenderer.send('terminal:kill', { id }),

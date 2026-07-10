@@ -1,118 +1,184 @@
-// license-manager.js
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const EventEmitter = require('events');
 
-// EMBEDDED_PUBLIC_KEY gets injected here by: node tools/generate-keypair.js
-const EMBEDDED_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxlRO8dPDIkvYXVMb+NME
-wlAAOU2tfriq+JvoJRknOkeM2T8uzhLSOhMWprkXda1pQY0Pw9mjizT1dD3TMqNn
-I+uqB5Gpt8YloBPv0Z021jPHcFfKM7D4zixLLweMZl9YAWt4iromDLUvJpBsx+iY
-7IM5cX79+r9rQXqfhdJbd1vZB7plz26Z6IJVunc/ytK0uyuou/s2FvlKWxuiSyi6
-hMcIVttIZcOQ53Pyx9+LqO1lPlWwvqgyWxvuF9FEdB/es0EVYJZERgP1uFiC+rC7
-YmfCq6iF2LKZsiDOOih1c6tFCuPWv9f06LxSD72G3QWSSoKiQDWvBX915iQkgr4L
-RQIDAQAB
------END PUBLIC KEY-----`;
+const GUMROAD_PRODUCT_ID = 'yozdw';
+const GUMROAD_VERIFY_URL = 'https://api.gumroad.com/v2/licenses/verify';
+const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
-class LicenseManager {
+class LicenseManager extends EventEmitter {
     constructor() {
+        super();
         this.licensePath = path.join(app.getPath('userData'), 'license.key');
+        this.dataPath = path.join(app.getPath('userData'), 'license-data.json');
         this.devFlagPath = path.join(app.getPath('userData'), '.noblehyve_dev');
         this.isPremium = false;
+        this.purchaseData = null;
+        this.refreshTimer = null;
         this.loadLicense();
     }
 
     loadLicense() {
         try {
-            // Developer mode — auto-enable premium for testing
             if (this.isDevMode()) {
                 this.isPremium = true;
-                console.log('🔧 Developer mode — premium features unlocked for testing');
+                console.log('Dev mode — premium features unlocked');
                 return;
             }
 
-            if (fs.existsSync(this.licensePath)) {
-                const licenseKey = fs.readFileSync(this.licensePath, 'utf8').trim();
-                this.isPremium = this.validateLicense(licenseKey);
-                if (this.isPremium) {
-                    console.log('✅ Premium license active');
-                } else {
-                    console.log('⚠️ Invalid license key');
+            if (fs.existsSync(this.dataPath)) {
+                const data = JSON.parse(fs.readFileSync(this.dataPath, 'utf8'));
+                this.purchaseData = data;
+                if (data.premium) {
+                    this.isPremium = true;
+                    console.log('Cached premium license active');
+                    this.scheduleRefresh();
+                    this.refreshStatus();
                 }
-            } else {
-                console.log('📋 Free version - cloud features locked');
             }
         } catch (error) {
-            console.error('License load error:', error);
+            console.error('License load error:', error.message);
             this.isPremium = false;
         }
     }
 
     isDevMode() {
-        // 1. Running via npm start / electron . (not packaged)
         if (!app.isPackaged) return true;
-        // 2. NOBLEHYVE_DEV environment variable set
         if (process.env.NOBLEHYVE_DEV === 'true' || process.env.NOBLEHYVE_DEV === '1') return true;
-        // 3. Dev flag file exists in userData
         if (fs.existsSync(this.devFlagPath)) return true;
         return false;
     }
 
-    validateLicense(key) {
-        if (!key || typeof key !== 'string') return false;
-
-        // Format: NOBLEHYVE-<customer-id>.<base64url-signature>
-        const pattern = /^NOBLEHYVE-.+\.([A-Za-z0-9_-]+)$/;
-        const match = key.match(pattern);
-        if (!match) return false;
-
-        const dotIdx = key.lastIndexOf('.');
-        const licenseBody = key.substring(0, dotIdx);
-        const signature = match[1];
-
-        // If developer hasn't generated keys yet, use fallback
-        if (!EMBEDDED_PUBLIC_KEY) {
-            return this.fallbackValidate(key);
+    async verifyWithGumroad(licenseKey, incrementUses = false) {
+        if (GUMROAD_PRODUCT_ID === 'YOUR_GUMROAD_PRODUCT_ID_HERE' || GUMROAD_PRODUCT_ID === 'PASTE_YOUR_PRODUCT_ID_HERE') {
+            return { success: false, error: 'Gumroad product ID not configured' };
         }
-
         try {
-            const verify = crypto.createVerify('RSA-SHA256');
-            verify.update(licenseBody);
-            return verify.verify(EMBEDDED_PUBLIC_KEY, signature, 'base64url');
+            const body = new URLSearchParams();
+            body.append('product_id', GUMROAD_PRODUCT_ID);
+            body.append('license_key', licenseKey);
+            if (incrementUses) body.append('increment_uses_count', 'true');
+
+            const resp = await fetch(GUMROAD_VERIFY_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: body.toString()
+            });
+            return await resp.json();
         } catch (err) {
-            console.error('RSA verify error:', err.message);
-            return this.fallbackValidate(key);
+            return { success: false, error: err.message };
         }
     }
 
-    // Temporary fallback so the app still works until generate-keypair.js is run
-    fallbackValidate(key) {
-        const demo = [
-            'NOBLEHYVE-DEMO-0000-0001',
-            'NOBLEHYVE-TEST-1234-5678'
-        ];
-        return demo.includes(key);
+    isSubscriptionActive(purchase) {
+        if (!purchase) return false;
+        if (!purchase.is_subscription) return true;
+        if (purchase.subscription_ended_at) return false;
+        return true;
     }
 
-    activateLicense(key) {
-        if (this.validateLicense(key)) {
+    async activateLicense(key) {
+        if (!key || typeof key !== 'string') {
+            return { success: false, error: 'No license key provided' };
+        }
+
+        const result = await this.verifyWithGumroad(key, true);
+        if (result.success) {
+            const subscriptionActive = this.isSubscriptionActive(result.purchase);
+            if (!subscriptionActive) {
+                return { success: false, error: 'This subscription has ended. Please renew your plan.' };
+            }
+
             fs.writeFileSync(this.licensePath, key, 'utf8');
+            this.purchaseData = {
+                premium: true,
+                key,
+                email: result.purchase?.email || '',
+                uses: result.uses || 1,
+                activatedAt: new Date().toISOString(),
+                purchase: result.purchase
+            };
+            fs.writeFileSync(this.dataPath, JSON.stringify(this.purchaseData, null, 2), 'utf8');
             this.isPremium = true;
+            this.scheduleRefresh();
+            this.emit('status-changed', { isPremium: true });
             return { success: true, message: 'License activated successfully!' };
         }
-        return { success: false, error: 'Invalid license key' };
+
+        const errorMsg = result.error === 'That license does not exist for the provided product.'
+            ? 'Invalid license key'
+            : (result.error || 'Verification failed');
+        return { success: false, error: errorMsg };
     }
 
     deactivateLicense() {
         try {
-            if (fs.existsSync(this.licensePath)) {
-                fs.unlinkSync(this.licensePath);
-            }
+            if (fs.existsSync(this.licensePath)) fs.unlinkSync(this.licensePath);
+            if (fs.existsSync(this.dataPath)) fs.unlinkSync(this.dataPath);
+            const wasPremium = this.isPremium;
             this.isPremium = false;
+            this.purchaseData = null;
+            this.clearRefresh();
+            if (wasPremium) {
+                this.emit('status-changed', { isPremium: false });
+            }
             return { success: true };
         } catch (error) {
             return { success: false, error: error.message };
+        }
+    }
+
+    async refreshStatus() {
+        if (!this.purchaseData?.key) return;
+        const result = await this.verifyWithGumroad(this.purchaseData.key, false);
+        if (!result.success) {
+            console.log('License re-verification failed:', result.error);
+            if (result.error === 'That license does not exist for the provided product.') {
+                const wasPremium = this.isPremium;
+                this.isPremium = false;
+                this.purchaseData.premium = false;
+                this.purchaseData.subscriptionExpired = true;
+                fs.writeFileSync(this.dataPath, JSON.stringify(this.purchaseData, null, 2), 'utf8');
+                this.clearRefresh();
+                if (wasPremium) {
+                    this.emit('status-changed', { isPremium: false, reason: 'license_removed' });
+                }
+            }
+            return;
+        }
+
+        const subscriptionActive = this.isSubscriptionActive(result.purchase);
+        if (!subscriptionActive && this.isPremium) {
+            console.log('Subscription has ended — downgrading to free');
+            this.isPremium = false;
+            this.purchaseData.premium = false;
+            this.purchaseData.subscriptionExpired = true;
+            this.purchaseData.purchase = result.purchase;
+            fs.writeFileSync(this.dataPath, JSON.stringify(this.purchaseData, null, 2), 'utf8');
+            this.clearRefresh();
+            this.emit('status-changed', { isPremium: false, reason: 'subscription_ended' });
+            return;
+        }
+
+        if (this.purchaseData) {
+            this.purchaseData.purchase = result.purchase;
+            this.purchaseData.uses = result.uses;
+            fs.writeFileSync(this.dataPath, JSON.stringify(this.purchaseData, null, 2), 'utf8');
+        }
+    }
+
+    scheduleRefresh() {
+        this.clearRefresh();
+        this.refreshTimer = setInterval(() => {
+            this.refreshStatus();
+        }, REFRESH_INTERVAL_MS);
+    }
+
+    clearRefresh() {
+        if (this.refreshTimer) {
+            clearInterval(this.refreshTimer);
+            this.refreshTimer = null;
         }
     }
 
@@ -123,7 +189,10 @@ class LicenseManager {
     getLicenseStatus() {
         return {
             isPremium: this.isPremium,
-            hasLicense: fs.existsSync(this.licensePath)
+            hasLicense: this.purchaseData?.key ? fs.existsSync(this.licensePath) : false,
+            email: this.purchaseData?.email || null,
+            uses: this.purchaseData?.uses || 0,
+            subscriptionExpired: this.purchaseData?.subscriptionExpired || false
         };
     }
 }

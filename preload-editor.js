@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('editorAPI', {
         ipcRenderer.invoke('save-encrypted-file', { filename, content, password }),
     readEncryptedFile: (filePath, password) => 
         ipcRenderer.invoke('read-encrypted-file', { filePath, password }),
+    listEncryptedFiles: () =>
+        ipcRenderer.invoke('list-encrypted-files'),
     
     // ============ CLOUD STORAGE ============
     uploadToCloud: (filename, encryptedContent) => 
@@ -34,11 +36,35 @@ contextBridge.exposeInMainWorld('editorAPI', {
     // ============ CODE EXECUTION ============
     executeCode: (params) => ipcRenderer.invoke('editor:execute-code', params),
     
-    // ============ TERMINAL INTEGRATION ============
+    // ============ TERMINAL INTEGRATION (embedded) ============
     sendToTerminal: (code, cwd) => ipcRenderer.invoke('editor:send-to-terminal', { code, cwd }),
     setWorkspace: (dir) => ipcRenderer.invoke('editor:set-workspace', { dir }),
     getWorkspace: () => ipcRenderer.invoke('editor:get-workspace'),
+    createTerminalSession: (id, shell, cwd, cols, rows) => 
+        ipcRenderer.invoke('terminal:create', { id, shell, cwd, cols, rows }),
+    writeToTerminal: (id, data) => ipcRenderer.send('terminal:write', { id, data }),
+    resizeTerminal: (id, cols, rows) => ipcRenderer.send('terminal:resize', { id, cols, rows }),
+    killTerminalSession: (id) => ipcRenderer.send('terminal:kill', { id }),
+    onTerminalData: (callback) => {
+        const handler = (event, data) => callback(data);
+        ipcRenderer.on('terminal:data', handler);
+        return () => ipcRenderer.removeListener('terminal:data', handler);
+    },
+    onTerminalExit: (callback) => {
+        const handler = (event, data) => callback(data);
+        ipcRenderer.on('terminal:exit', handler);
+        return () => ipcRenderer.removeListener('terminal:exit', handler);
+    },
+    
+    // ============ DATA PIPELINE ============
+    sendPipelineEvent: (topic, data) => 
+        ipcRenderer.invoke('pipeline:event', { topic, data }),
     
     // ============ UI ============
-    toggleDevTools: () => ipcRenderer.send('toggle-editor-devtools')
+    toggleDevTools: () => ipcRenderer.send('toggle-editor-devtools'),
+    openPremiumPage: () => ipcRenderer.send('open-premium-page'),
+    
+    // ============ DEFAULT BROWSER ============
+    setAsDefaultBrowser: () => ipcRenderer.invoke('set-default-browser'),
+    isDefaultBrowser: () => ipcRenderer.invoke('is-default-browser')
 });

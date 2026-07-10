@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 12px;
+    color: #e0e0e0;
+    background: #1e1e1e;
+    border: 1px solid #3c3c3c;
+    border-radius: 10px;
+    overflow: hidden;
+    user-select: none;
+}
+.header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid #3c3c3c;
+}
+.header-actions { display: flex; gap: 6px; align-items: center; }
+.count { font-size: 11px; color: #888; font-weight: 400; margin-left: 4px; }
+.clear-btn {
+    background: none; border: none; color: #888; cursor: pointer;
+    font-size: 14px; padding: 2px 6px; border-radius: 4px;
+}
+.clear-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.list { overflow-y: auto; max-height: 200px; }
+.list::-webkit-scrollbar { width: 4px; }
+.list::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+.item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; font-size: 12px;
+    border-bottom: 1px solid #2d2d2d;
+}
+.item:last-child { border-bottom: none; }
+.item.done { opacity: 0.7; }
+.item.done:hover { opacity: 1; }
+.icon { font-size: 16px; flex-shrink: 0; }
+.info { flex: 1; min-width: 0; }
+.name {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    color: #e0e0e0; font-weight: 500;
+}
+.status { font-size: 11px; color: #888; margin-top: 2px; }
+.progress { margin-top: 4px; height: 4px; background: #3c3c3c; border-radius: 4px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 4px; background: #0078d4; transition: width 0.3s ease; }
+.progress-fill.done { background: #4caf50; }
+.actions { display: flex; gap: 4px; flex-shrink: 0; }
+.actions button {
+    background: none; border: none; color: #888; cursor: pointer;
+    font-size: 11px; padding: 4px 8px; border-radius: 4px; white-space: nowrap;
+}
+.actions button:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.actions .cancel-btn { color: #f44336; }
+.actions .cancel-btn:hover { background: rgba(244,67,54,0.15); }
+.actions .open-btn { color: #4caf50; }
+.actions .open-btn:hover { background: rgba(76,175,80,0.15); }
+.footer {
+    padding: 8px 14px; border-top: 1px solid #3c3c3c; text-align: center;
+}
+.footer button {
+    background: none; border: none; color: #0078d4; cursor: pointer;
+    font-size: 12px; font-weight: 500; padding: 4px 8px; border-radius: 4px;
+}
+.footer button:hover { background: rgba(0,120,212,0.1); }
+.empty {
+    padding: 20px; text-align: center; color: #888; font-size: 13px;
+}
+</style>
+</head>
+<body>
+<div class="header">
+    <span>⬇️ Downloads <span id="count" class="count"></span></span>
+    <div class="header-actions">
+        <button class="clear-btn" id="clearBtn" title="Clear all">✕</button>
+        <button class="clear-btn" id="closeBtn" title="Close">—</button>
+    </div>
+</div>
+<div id="list" class="list">
+    <div class="empty">No downloads</div>
+</div>
+<div class="footer">
+    <button id="viewAllBtn">View all downloads →</button>
+</div>
+<script>
+const api = window.electronAPI;
+const listEl = document.getElementById('list');
+const countEl = document.getElementById('count');
+const clearBtn = document.getElementById('clearBtn');
+const viewAllBtn = document.getElementById('viewAllBtn');
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]);
+}
+
+function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return 'Unknown';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(k)), sizes.length - 1);
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
+function render(downloads) {
+    const active = downloads.filter(d => d.status === 'downloading');
+    const recent = downloads.filter(d => d.status === 'completed').slice(0, 5);
+    const shown = [...active, ...recent];
+
+    if (countEl) countEl.textContent = active.length > 0 ? `(${active.length})` : '';
+
+    if (shown.length === 0) {
+        listEl.innerHTML = '<div class="empty">No downloads</div>';
+        return;
+    }
+
+    listEl.innerHTML = shown.map(dl => {
+        const isActive = dl.status === 'downloading';
+        const icon = isActive ? '⏳' : '✅';
+        const pct = dl.percent || 0;
+        const sizeText = isActive && dl.receivedBytes
+            ? `${formatBytes(dl.receivedBytes)} / ${formatBytes(dl.size)}`
+            : formatBytes(dl.size);
+        const speedText = dl.speed ? ` · ${formatBytes(dl.speed)}/s` : '';
+
+        return `
+        <div class="item ${isActive ? '' : 'done'}" data-dl-id="${dl.downloadId || ''}">
+            <span class="icon">${icon}</span>
+            <div class="info">
+                <div class="name">${escapeHtml(dl.name)}</div>
+                <div class="status">${isActive ? `${sizeText}${speedText}` : 'Complete — ' + sizeText}</div>
+                <div class="progress">
+                    <div class="progress-fill ${isActive ? '' : 'done'}" style="width:${isActive ? pct : 100}%"></div>
+                </div>
+            </div>
+            <div class="actions">
+                ${isActive
+                    ? `<button class="cancel-btn" data-id="${dl.downloadId}">Cancel</button>`
+                    : `<button class="open-btn" data-path="${escapeHtml(dl.path)}" title="Open file location">📂</button>`
+                }
+            </div>
+        </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.cancel-btn').forEach(btn => {
+        btn.addEventListener('click', () => api.cancelDownload(parseInt(btn.dataset.id)));
+    });
+    listEl.querySelectorAll('.open-btn').forEach(btn => {
+        btn.addEventListener('click', () => api.openFile(btn.dataset.path));
+    });
+}
+
+if (api) {
+    api.onUpdate((data) => render(data));
+    clearBtn.addEventListener('click', () => api.clearAll());
+    viewAllBtn.addEventListener('click', () => api.viewAll());
+    closeBtn.addEventListener('click', () => api.close());
+}
+</script>
+</body>
+</html>

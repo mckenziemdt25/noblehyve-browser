@@ -1,6 +1,14 @@
 // app.js - NobleHyve Browser - SECURE VERSION with Premium Features
 // All security vulnerabilities fixed
 
+const pipeline = window.electronAPI?.sendPipelineEvent ? {
+    send: (topic, data) => window.electronAPI.sendPipelineEvent(topic, data).catch(() => {}),
+    perf: (action, detail, startTime) => {
+        const elapsed = Date.now() - startTime;
+        window.electronAPI.sendPipelineEvent('browser', { action, detail, elapsedMs: elapsed, timestamp: new Date().toISOString() }).catch(() => {});
+    }
+} : { send: () => {}, perf: () => {} };
+
 let tabs = [];
 let currentTabId = null;
 let sessionStartTime = Date.now();
@@ -12,6 +20,8 @@ let cachedNewsSource = null;
 let cachedNewsTime = 0;
 let bookmarks = [];
 let downloads = [];
+let navigationStartTimes = {};
+let startupTime = Date.now();
 
 // Premium status
 let isPremium = false;
@@ -84,16 +94,22 @@ if (quickSearch) {
 async function updateUsageInfo() {
     try {
         const usage = await api.getUsageStatus();
-        const cloudEl = document.getElementById('usageCloud');
-        const encEl = document.getElementById('usageEncrypt');
         const usageInfoEl = document.getElementById('usageInfo');
         if (usageInfoEl) {
+            const usedMB = (usage.cloudBytesUsed / (1024 * 1024)).toFixed(1);
+            const maxMB = Math.round(usage.cloudMaxBytes / (1024 * 1024));
+            usageInfoEl.style.display = 'block';
+            usageInfoEl.innerHTML = `
+                <div>☁️ Cloud storage: ${usedMB} MB / ${maxMB} MB used</div>
+                <div>🔒 Local encryption: Unlimited</div>
+                <div>📄 Cloud file count: Unlimited</div>
+            `;
             if (usage.isPremium) {
-                usageInfoEl.style.display = 'none';
+                usageInfoEl.style.background = 'rgba(76,175,80,0.1)';
+                usageInfoEl.style.color = '#4caf50';
             } else {
-                usageInfoEl.style.display = 'block';
-                if (cloudEl) cloudEl.textContent = `${usage.cloudSaves.used}/5 used`;
-                if (encEl) encEl.textContent = `${usage.localEncrypts.used}/5 used`;
+                usageInfoEl.style.background = 'rgba(255,152,0,0.1)';
+                usageInfoEl.style.color = '#ff9800';
             }
         }
     } catch (e) { console.error('Failed to load usage info:', e); }
@@ -200,6 +216,44 @@ function initPremiumUI() {
     if (buyBtn) buyBtn.onclick = buyLicense;
     
     checkPremiumStatus();
+
+    const pipelineBtn = document.getElementById('openPipelineBtn');
+    if (pipelineBtn) pipelineBtn.onclick = () => {
+        if (api.openPipelineDashboard) api.openPipelineDashboard();
+    };
+}
+
+function initDefaultBrowserUI() {
+    const setBtn = document.getElementById('setDefaultBrowserBtn');
+    const statusSpan = document.getElementById('defaultBrowserStatus');
+    if (!setBtn) return;
+
+    async function updateStatus() {
+        if (api && api.isDefaultBrowser) {
+            const result = await api.isDefaultBrowser();
+            if (statusSpan) {
+                statusSpan.textContent = result.isDefault
+                    ? '✅ NobleHyve is your default browser'
+                    : '❌ Not the default browser';
+            }
+            if (setBtn) setBtn.style.display = result.isDefault ? 'none' : 'inline-block';
+        }
+    }
+
+    updateStatus();
+
+    setBtn.onclick = async () => {
+        if (api && api.setAsDefaultBrowser) {
+            const result = await api.setAsDefaultBrowser();
+            if (result.success) {
+                showToast('✅ NobleHyve is now your default browser', 'success');
+                if (statusSpan) statusSpan.textContent = '✅ NobleHyve is your default browser';
+                setBtn.style.display = 'none';
+            } else {
+                showToast('Failed: ' + (result.error || 'unknown error'), 'error');
+            }
+        }
+    };
 }
 
 // ============ CLOUD STORAGE MANAGEMENT (Premium Feature) ============
@@ -275,18 +329,22 @@ async function updateCloudStatus() {
     
     try {
         const status = await api.getCloudStatus();
-        
+
         if (status.connected) {
-            statusSpan.innerHTML = '✅ Connected to Cloudflare R2 (Encrypted)';
+            const tierLabel = status.isPremium ? '⭐ Premium' : '☁️ Free';
+            const maxBytes = status.isPremium ? 5 * 1024 * 1024 * 1024 : 100 * 1024 * 1024;
+            const maxMB = Math.round(maxBytes / (1024 * 1024));
+            statusSpan.innerHTML = `✅ Connected to Cloudflare R2 (Encrypted) · ${tierLabel}`;
             if (cloudDiv) {
                 cloudDiv.classList.add('connected');
                 cloudDiv.classList.remove('error');
             }
-            
+
             if (storageInfo && status.stats) {
+                const pct = maxMB > 0 ? Math.round((status.stats.totalSize / (maxBytes)) * 100) : 0;
                 storageInfo.innerHTML = `
                     📁 Files stored: ${status.stats.fileCount || 0}<br>
-                    💾 Total storage: ${status.stats.totalSizeMB || 0} MB
+                    💾 Storage: ${status.stats.totalSizeMB || 0} MB / ${maxMB} MB (${pct}%)
                 `;
             }
         } else {
@@ -575,11 +633,120 @@ function createBookmarkFolder() {
 
 let activeDownloads = {};
 
+let popupDownloadTimeout = null;
+
+function showDownloadPopup() {
+    const popup = document.getElementById('downloadPopup');
+    if (popup) {
+        popup.style.display = 'flex';
+        renderDownloadPopupContent();
+    }
+    clearTimeout(popupDownloadTimeout);
+    const currentTab = tabs.find(t => t.id === currentTabId);
+    if (currentTab && !currentTab.isDashboard && !currentTab.isSettings && !currentTab.isHistory) {
+        document.getElementById('browserContainer').style.display = 'none';
+        if (api && api.hideBrowser) api.hideBrowser();
+    }
+}
+
+function hideDownloadPopup() {
+    const popup = document.getElementById('downloadPopup');
+    if (popup) popup.style.display = 'none';
+    const currentTab = tabs.find(t => t.id === currentTabId);
+    if (currentTab && !currentTab.isDashboard && !currentTab.isSettings && !currentTab.isHistory) {
+        document.getElementById('browserContainer').style.display = 'block';
+        if (api && api.showBrowser) api.showBrowser(currentTabId);
+    }
+}
+
+function updateDownloadBadge() {
+    const badge = document.getElementById('downloadBadge');
+    if (!badge) return;
+    const total = downloads.length;
+    if (total > 0) { badge.textContent = total; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+}
+
+function renderDownloadPopupContent() {
+    const list = document.getElementById('downloadPopupList');
+    const count = document.getElementById('downloadPopupCount');
+    if (!list) return;
+
+    const active = downloads.filter(d => d.status === 'downloading');
+    const recent = downloads.filter(d => d.status === 'completed').slice(0, 5);
+    const shown = [...active, ...recent];
+
+    if (count) count.textContent = active.length > 0 ? `(${active.length})` : '';
+
+    list.innerHTML = shown.map(dl => {
+        const isActive = dl.status === 'downloading';
+        const icon = isActive ? '⏳' : '✅';
+        const pct = dl.percent || 0;
+        const sizeText = isActive && dl.receivedBytes
+            ? `${formatBytes(dl.receivedBytes)} / ${formatBytes(dl.size)}`
+            : formatBytes(dl.size);
+        const speedText = dl.speed ? ` · ${formatBytes(dl.speed)}/s` : '';
+
+        return `
+        <div class="download-popup-item ${isActive ? '' : 'done'}" data-dl-id="${dl.downloadId || ''}">
+            <span class="download-popup-item-icon">${icon}</span>
+            <div class="download-popup-item-info">
+                <div class="download-popup-item-name">${escapeHtml(dl.name)}</div>
+                <div class="download-popup-item-status">${isActive ? `${sizeText}${speedText}` : 'Complete — ' + sizeText}</div>
+                <div class="download-popup-item-progress">
+                    <div class="download-popup-item-progress-fill ${isActive ? '' : 'done'}" style="width:${isActive ? pct : 100}%"></div>
+                </div>
+            </div>
+            <div class="download-popup-item-actions">
+                ${isActive
+                    ? `<button class="popup-cancel-btn" data-dl-id="${dl.downloadId}">Cancel</button>`
+                    : `<button class="popup-open-btn" data-path="${escapeHtml(dl.path)}" title="Open file location">📂</button>`
+                }
+            </div>
+        </div>`;
+    }).join('');
+
+    list.querySelectorAll('.popup-cancel-btn').forEach(btn => {
+        btn.addEventListener('click', () => cancelDownload(parseInt(btn.dataset.dlId)));
+    });
+    list.querySelectorAll('.popup-open-btn').forEach(btn => {
+        btn.addEventListener('click', () => openDownloadFile(btn.dataset.path));
+    });
+}
+
+function renderDownloadPopup() {
+    updateDownloadBadge();
+    const popup = document.getElementById('downloadPopup');
+    if (popup && popup.style.display !== 'none') {
+        renderDownloadPopupContent();
+    }
+    if (api && api.updateDownloadPopupState) {
+        api.updateDownloadPopupState(downloads);
+    }
+}
+
+function schedulePopupHide() {
+    const popup = document.getElementById('downloadPopup');
+    if (!popup || popup.style.display === 'none') return;
+    clearTimeout(popupDownloadTimeout);
+    const hasActive = downloads.some(d => d.status === 'downloading');
+    if (!hasActive) {
+        popupDownloadTimeout = setTimeout(() => {
+            renderDownloadPopupContent();
+            const stillActive = downloads.some(d => d.status === 'downloading');
+            if (!stillActive && popup.style.display !== 'none') {
+                setTimeout(hideDownloadPopup, 3000);
+            }
+        }, 2000);
+    }
+}
+
 function loadDownloads() {
     try {
         const saved = localStorage.getItem('noblehyve_downloads');
         if (saved) downloads = JSON.parse(saved);
         renderDownloads();
+        updateDownloadBadge();
     } catch(e) {}
 }
 
@@ -742,6 +909,7 @@ function renderDownloads() {
             }
         });
     });
+    updateDownloadBadge();
 }
 
 function formatBytes(bytes) {
@@ -1023,11 +1191,13 @@ function normalizeNavigationInput(input) {
 }
 
 function navigateToUrl(url) {
+    const start = Date.now();
     const finalUrl = normalizeNavigationInput(url);
     if (!finalUrl) return;
     
     const currentTab = tabs.find(t => t.id === currentTabId);
     if (currentTab) {
+        navigationStartTimes[currentTabId] = Date.now();
         if (currentTab.isDashboard || currentTab.isSettings) {
             convertDashboardToBrowser(currentTabId, finalUrl);
         } else {
@@ -1040,6 +1210,7 @@ function navigateToUrl(url) {
         }
         urlBar.value = finalUrl;
     }
+    pipeline.perf('navigate', finalUrl, start);
 }
 
 function convertDashboardToBrowser(tabId, url) {
@@ -1072,6 +1243,7 @@ function convertDashboardToBrowser(tabId, url) {
 
 // ============ TAB MANAGEMENT ============
 function createNewTab() {
+    const start = Date.now();
     const id = Date.now();
     const isDashboard = true;
     
@@ -1101,6 +1273,7 @@ function createNewTab() {
     totalTabsCreated++;
     
     switchTab(id);
+    pipeline.perf('new-tab', `tab-${id}`, start);
     updateDashboardStats();
     return id;
 }
@@ -1181,6 +1354,7 @@ function switchTab(id) {
         setTimeout(() => {
             initCloudStorageUI();
             initPremiumUI();
+            initDefaultBrowserUI();
         }, 100);
     } else if (tab.isDashboard) {
         document.getElementById('dashboard').style.display = 'block';
@@ -1203,6 +1377,7 @@ function closeTab(id) {
     if (index === -1) return;
     
     const tab = tabs[index];
+    const url = tab.url || 'new-tab';
     tab.element.remove();
     
     if (tab.isHistory) {
@@ -1218,6 +1393,7 @@ function closeTab(id) {
     }
     
     tabs.splice(index, 1);
+    pipeline.send('browser', { action: 'close-tab', detail: url, tabCount: tabs.length, timestamp: new Date().toISOString() });
     
     if (tabs.length > 0) {
         const newIndex = Math.max(0, index - 1);
@@ -1765,18 +1941,10 @@ function closeMoreMenu(restoreBrowser = true) {
 }
 
 function toggleMoreMenu() {
-    if (!moreMenu) return;
-    const opening = moreMenu.style.display !== 'block';
-    moreMenu.style.display = opening ? 'block' : 'none';
-    // Hide browser view while menu is open so it stays on top
-    if (opening) {
-        const currentTab = tabs.find(t => t.id === currentTabId);
-        if (currentTab && !currentTab.isDashboard && !currentTab.isSettings && !currentTab.isHistory) {
-            document.getElementById('browserContainer').style.display = 'none';
-            if (api && api.hideBrowser) api.hideBrowser();
-        }
-    } else {
-        closeMoreMenu();
+    if (api && api.showMoreMenu) {
+        api.showMoreMenu();
+    } else if (window.legacyIpcRenderer) {
+        window.legacyIpcRenderer.send('show-more-menu');
     }
 }
 
@@ -2117,18 +2285,22 @@ function setupIPCEventListeners() {
         if (typeof addDownloadProgress === 'function') {
             addDownloadProgress(data);
         }
+        renderDownloadPopup();
     });
 
     api.on('download-progress', (event, data) => {
         if (typeof updateDownloadProgress === 'function') {
             updateDownloadProgress(data);
         }
+        renderDownloadPopup();
     });
 
     api.on('download-complete', (event, { id, filename, path, size }) => {
         if (typeof addDownload === 'function') {
             addDownload(path, size, id);
         }
+        renderDownloadPopup();
+        schedulePopupHide();
     });
 
     api.on('download-cancelled', (event, { id, filename }) => {
@@ -2140,6 +2312,8 @@ function setupIPCEventListeners() {
             renderDownloads();
             showToast(`Download cancelled: ${filename}`);
         }
+        renderDownloadPopup();
+        schedulePopupHide();
     });
 
     api.on('download-error', (event, { id, filename, error }) => {
@@ -2152,6 +2326,8 @@ function setupIPCEventListeners() {
             renderDownloads();
             showToast(`Download failed: ${filename}`, 'error');
         }
+        renderDownloadPopup();
+        schedulePopupHide();
     });
 
     api.on('show-toast', (event, { message, type }) => {
@@ -2181,12 +2357,14 @@ function setupIPCEventListeners() {
     api.on('navigation-error', (event, details) => {
         const errorMsg = details.errorDescription || 'Unknown error';
         showToast(`Navigation failed: ${sanitizeInput(errorMsg)}`, 'error');
+        pipeline.send('browser', { action: 'navigation-error', detail: details.url || 'unknown', error: errorMsg, timestamp: new Date().toISOString() });
     });
     
     api.on('tab-crashed', (event, details) => {
         const tab = tabs.find(t => t.id === details.id);
         if (tab && tab.title) tab.title.innerText = 'Crashed';
         showToast('A tab crashed, but NobleHyve stayed open.', 'error');
+        pipeline.send('browser', { action: 'tab-crashed', detail: tab?.url || 'unknown', timestamp: new Date().toISOString() });
     });
     
     api.on('tab-unresponsive', () => {
@@ -2194,6 +2372,7 @@ function setupIPCEventListeners() {
     });
     
     api.on('loading-start', (event, { id }) => {
+        navigationStartTimes[id] = Date.now();
         const tab = tabs.find(t => t.id === id);
         if (tab?.element) tab.element.classList.add('loading');
     });
@@ -2201,6 +2380,11 @@ function setupIPCEventListeners() {
     api.on('loading-stop', (event, { id }) => {
         const tab = tabs.find(t => t.id === id);
         if (tab?.element) tab.element.classList.remove('loading');
+        const navStart = navigationStartTimes[id];
+        if (navStart) {
+            pipeline.perf('page-load', tab?.url || 'unknown', navStart);
+            delete navigationStartTimes[id];
+        }
     });
     
     api.on('browser-data-cleared', () => {
@@ -2210,6 +2394,57 @@ function setupIPCEventListeners() {
     api.on('restore-session', (event, savedTabs) => {
         if (Array.isArray(savedTabs)) {
             console.log('Session restore:', savedTabs.length, 'tabs');
+        }
+    });
+
+    api.on('open-new-tab', (event, { url, sourceId }) => {
+        if (url) {
+            const tabId = createNewTab();
+            const tab = tabs.find(t => t.id === tabId);
+            if (tab) {
+                tab.url = url;
+                tab.isDashboard = false;
+                if (tab.title) tab.title.innerText = 'Loading...';
+                document.getElementById('dashboard').style.display = 'none';
+                document.getElementById('settingsPanel').style.display = 'none';
+                document.getElementById('browserContainer').style.display = 'block';
+                if (api && api.newBrowserTab) {
+                    api.newBrowserTab(tabId, url);
+                }
+            }
+        }
+    });
+
+    api.on('menu-action', (event, action) => {
+        const moreBtnEl = document.getElementById('moreBtn');
+        if (moreBtnEl) moreBtnEl.classList.remove('active');
+        if (typeof handleMoreAction === 'function') {
+            handleMoreAction(action);
+        }
+    });
+
+    api.on('download-popup-closed', () => {
+        downloadPopupOpen = false;
+    });
+
+    api.on('popup-clear-all-downloads', () => {
+        downloads = [];
+        activeDownloads = {};
+        localStorage.removeItem('noblehyve_downloads');
+        renderDownloads();
+        updateDownloadBadge();
+        renderDownloadPopup();
+    });
+
+    api.on('premium-status-changed', (event, { isPremium: nowPremium, reason }) => {
+        isPremium = nowPremium;
+        updatePremiumUI();
+        if (!nowPremium) {
+            updateUsageInfo();
+            showToast(reason === 'subscription_ended'
+                ? 'Your Premium subscription has ended. Downgraded to Free tier.'
+                : 'Premium license no longer valid. Downgraded to Free tier.',
+                'error');
         }
     });
 }
@@ -2338,6 +2573,13 @@ document.addEventListener('click', (event) => {
     if (!moreMenu.contains(event.target) && event.target !== moreBtn) {
         closeMoreMenu();
     }
+    const popup = document.getElementById('downloadPopup');
+    const dlBtn = document.getElementById('downloadBtn');
+    if (popup && popup.style.display !== 'none' && dlBtn) {
+        if (!popup.contains(event.target) && event.target !== dlBtn && !dlBtn.contains(event.target)) {
+            hideDownloadPopup();
+        }
+    }
 });
 
 document.addEventListener('keydown', (event) => {
@@ -2348,6 +2590,13 @@ document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
         hideFindBar();
         closeMoreMenu();
+        if (downloadPopupOpen) {
+            if (api && api.hideDownloadPopup) {
+                api.hideDownloadPopup();
+            }
+            downloadPopupOpen = false;
+        }
+        hideDownloadPopup();
     }
 });
 
@@ -2356,6 +2605,28 @@ document.getElementById('openDownloadsFolderBtn')?.addEventListener('click', () 
         api.openDownloadsFolder();
     } else if (window.legacyIpcRenderer) {
         window.legacyIpcRenderer.send('open-downloads-folder');
+    }
+});
+
+let downloadPopupOpen = false;
+document.getElementById('downloadBtn')?.addEventListener('click', () => {
+    if (api && api.showDownloadPopup) {
+        if (!downloadPopupOpen) {
+            api.showDownloadPopup(downloads);
+            downloadPopupOpen = true;
+        } else {
+            api.hideDownloadPopup();
+            downloadPopupOpen = false;
+        }
+    } else if (window.legacyIpcRenderer) {
+        const popup = document.getElementById('downloadPopup');
+        if (popup) {
+            if (popup.style.display === 'none') {
+                popup.style.display = 'flex';
+            } else {
+                popup.style.display = 'none';
+            }
+        }
     }
 });
 
@@ -2368,6 +2639,18 @@ document.getElementById('chooseDownloadPathBtn')?.addEventListener('click', asyn
 
 document.querySelectorAll('.more-menu button').forEach(btn => {
     btn.addEventListener('click', () => handleMoreAction(btn.dataset.action));
+});
+
+document.getElementById('downloadPopupViewAll')?.addEventListener('click', () => {
+    handleMoreAction('downloads');
+    hideDownloadPopup();
+});
+document.getElementById('downloadPopupClearAll')?.addEventListener('click', () => {
+    downloads = [];
+    activeDownloads = {};
+    localStorage.removeItem('noblehyve_downloads');
+    renderDownloads();
+    hideDownloadPopup();
 });
 
 document.querySelectorAll('.quick-link').forEach(btn => {
@@ -2482,8 +2765,21 @@ window.addEventListener('DOMContentLoaded', () => {
     loadSettings();
     fetchDeveloperNews();
     createNewTab();
+    startupTime = Date.now();
+    pipeline.send('browser', { action: 'startup', elapsedMs: 0, timestamp: new Date().toISOString() });
     setupIPCEventListeners();
     setInterval(updateDashboardStats, 10000);
+    setInterval(() => {
+        const mem = performance?.memory;
+        pipeline.send('browser', {
+            action: 'performance-metrics',
+            uptimeMs: Date.now() - startupTime,
+            tabCount: tabs.length,
+            totalTabsCreated,
+            memory: mem ? { jsHeapSizeLimit: mem.jsHeapSizeLimit, totalJSHeapSize: mem.totalJSHeapSize, usedJSHeapSize: mem.usedJSHeapSize } : null,
+            timestamp: new Date().toISOString()
+        });
+    }, 30000);
 
     setTimeout(async () => {
         if (api && api.getExternalBrowser) {

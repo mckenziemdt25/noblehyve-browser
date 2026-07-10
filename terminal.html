@@ -248,11 +248,18 @@
             const shellCmd = getShellCommand();
             const shellArgs = getShellArgs();
             
-            console.log('Starting session with:', shellCmd, shellArgs);
+            // Pass actual terminal dimensions so PTY matches display from the start
+            const { cols, rows } = term;
+            console.log('Starting session with:', shellCmd, shellArgs, `(${cols}x${rows})`);
             
-            const result = await window.terminalAPI.createSession(currentSessionId, shellCmd, cwd);
+            const result = await window.terminalAPI.createSession(currentSessionId, shellCmd, cwd, cols, rows);
             
             if (result && result.success) {
+                // Sync PTY size immediately after creation
+                const { cols, rows } = term;
+                if (window.terminalAPI && window.terminalAPI.resize) {
+                    window.terminalAPI.resize(currentSessionId, cols, rows);
+                }
                 document.getElementById('terminalStatus').textContent = '🟢 Ready';
                 const shellName = currentShell === 'powershell' ? 'PowerShell' : 'Command Prompt';
                 term.write(`\x1b[32m✓ ${shellName} Ready\x1b[0m\r\n`);

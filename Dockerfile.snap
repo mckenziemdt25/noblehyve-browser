@@ -1,0 +1,30 @@
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y \
+    curl \
+    gnupg \
+    git \
+    build-essential \
+    python3 \
+    snapcraft \
+    --no-install-recommends
+
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get install -y nodejs && \
+    node --version && npm --version
+
+RUN npm install --global npm@10
+
+RUN printf '#!/bin/bash\n/usr/bin/snapcraft "$@" --destructive-mode\n' > /usr/local/bin/snapcraft && \
+    chmod +x /usr/local/bin/snapcraft
+
+RUN mkdir -p /app
+WORKDIR /app
+COPY package*.json ./
+RUN npm install 2>&1
+COPY . .
+
+RUN npx electron-builder --linux snap 2>&1
+
+CMD ["ls", "-la", "dist/"]

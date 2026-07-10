@@ -1,19 +1,23 @@
-// terminal-manager.js - Complete PTY version
+// terminal-manager.js - Complete PTY version with pipeline telemetry
 const { ipcMain, app } = require('electron');
 const os = require('os');
 const path = require('path');
 const pty = require('node-pty');
+const pipeline = require('./kafka-pipeline');
 
 class TerminalManager {
-    constructor() {
+    constructor(openTerminalFn) {
         this.sessions = new Map();
+        this._openTerminalFn = openTerminalFn || null;
+        this._pendingResolvers = new Map();
         this.setupIPCHandlers();
         console.log('TerminalManager initialized on:', os.platform());
     }
 
     setupIPCHandlers() {
         // Create PTY session
-        ipcMain.handle('terminal:create', async (event, { id, shell, cwd }) => {
+        ipcMain.handle('terminal:create', async (event, { id, shell, cwd, cols, rows }) => {
+            const start = Date.now();
             try {
                 console.log('Creating terminal session:', id);
                 
@@ -32,11 +36,13 @@ class TerminalManager {
                 }
                 
                 let workingDir = cwd || os.homedir();
+                const ptyCols = cols || 120;
+                const ptyRows = rows || 30;
                 
                 const ptyProcess = pty.spawn(terminalShell, shellArgs, {
                     name: 'xterm-256color',
-                    cols: 120,
-                    rows: 30,
+                    cols: ptyCols,
+                    rows: ptyRows,
                     cwd: workingDir,
                     env: {
                         ...process.env,
@@ -48,6 +54,9 @@ class TerminalManager {
                 });
                 
                 this.sessions.set(id, ptyProcess);
+                const resolver = this._pendingResolvers.get(id);
+                if (resolver) { resolver(); this._pendingResolvers.delete(id); }
+                pipeline.terminal({ action: 'session-created', id, shell: terminalShell, elapsedMs: Date.now() - start });
                 
                 ptyProcess.onData((data) => {
                     if (!event.sender.isDestroyed()) {
@@ -56,6 +65,7 @@ class TerminalManager {
                 });
                 
                 ptyProcess.onExit(({ exitCode, signal }) => {
+                    pipeline.terminal({ action: 'session-exit', id, exitCode, signal, uptimeMs: Date.now() - start });
                     if (!event.sender.isDestroyed()) {
                         event.sender.send('terminal:exit', { id, exitCode, signal });
                     }
@@ -66,6 +76,7 @@ class TerminalManager {
                 
             } catch (error) {
                 console.error('Terminal creation error:', error);
+                pipeline.terminal({ action: 'session-error', id, error: error.message, elapsedMs: Date.now() - start });
                 return { success: false, error: error.message };
             }
         });
@@ -114,7 +125,13 @@ class TerminalManager {
 
         // Editor integration: send code to terminal
         ipcMain.handle('editor:send-to-terminal', async (event, { code, cwd }) => {
+            const start = Date.now();
+            const ready = await this.ensureSession('main', 10000);
+            if (!ready) {
+                return { success: false, error: 'Terminal session could not be started' };
+            }
             const ok = this.sendToMainSession(code, cwd);
+            pipeline.terminal({ action: 'code-execution', codeLen: code.length, cwd: cwd || '', elapsedMs: Date.now() - start });
             return { success: ok };
         });
 
@@ -246,11 +263,37 @@ if (mainWindow && !mainWindow.isDestroyed()) {
         return this.writeToSession('main', fullCmd);
     }
 
+    ensureSession(id, timeoutMs = 8000) {
+        return new Promise((resolve) => {
+            const session = this.sessions.get(id);
+            if (session && !session.killed) {
+                resolve(true);
+                return;
+            }
+            if (this._pendingResolvers.has(id)) {
+                resolve(false);
+                return;
+            }
+            this._pendingResolvers.set(id, () => {
+                clearTimeout(timer);
+                resolve(true);
+            });
+            if (this._openTerminalFn) {
+                this._openTerminalFn();
+            }
+            const timer = setTimeout(() => {
+                this._pendingResolvers.delete(id);
+                resolve(false);
+            }, timeoutMs);
+        });
+    }
+
     killAllSessions() {
         for (const [id, session] of this.sessions) {
             if (!session.killed) {
                 try {
                     session.kill();
+                    pipeline.terminal({ action: 'session-killed', id });
                 } catch (err) {
                     console.error('Error killing session:', err);
                 }

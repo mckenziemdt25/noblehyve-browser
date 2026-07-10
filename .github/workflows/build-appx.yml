@@ -1,0 +1,58 @@
+name: Build Windows APPX for Microsoft Store
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - 'test_data/**'
+      - 'test_encrypted_data/**'
+      - 'test-*.js'
+      - '*.md'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Configure code signing
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.APPX_CERT_BASE64 }}" ]; then
+            echo "${{ secrets.APPX_CERT_BASE64 }}" | base64 -d > build/noblehyve-cert.pfx
+            echo "✅ Certificate decoded from secret"
+          else
+            echo "⚠️  Using repo certificate. Store as APPX_CERT_BASE64 secret for security."
+          fi
+
+          PASSWORD="${{ secrets.APPX_CERT_PASSWORD }}"
+          if [ -n "$PASSWORD" ]; then
+            npm pkg set build.win.certificatePassword="$PASSWORD"
+            echo "✅ Password set from secret"
+          fi
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build APPX package
+        run: npx electron-builder --win appx
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: noblehyve-appx-${{ github.sha }}
+          path: dist/*.appx

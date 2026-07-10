@@ -24,6 +24,66 @@ let cleanExit = false;
 let downloadIdCounter = 0;
 const activeDownloads = new Map();
 
+let downloadPopupWindow = null;
+
+// Single instance lock — prevents multiple instances and handles installer prompts
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+    app.quit();
+} else {
+    app.on('second-instance', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
+    });
+}
+
+function sendToDownloadPopup(data) {
+    if (downloadPopupWindow && !downloadPopupWindow.isDestroyed()) {
+        downloadPopupWindow.webContents.send('update-popup', data);
+    }
+}
+
+function positionDownloadPopup() {
+    if (!downloadPopupWindow || downloadPopupWindow.isDestroyed()) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    const bounds = mainWindow.getBounds();
+    const x = bounds.x + bounds.width - 390;
+    const y = bounds.y + 90;
+    downloadPopupWindow.setPosition(Math.max(0, x), Math.max(0, y));
+}
+
+function createDownloadPopupWindow() {
+    if (downloadPopupWindow && !downloadPopupWindow.isDestroyed()) return;
+    downloadPopupWindow = new BrowserWindow({
+        width: 380,
+        height: 320,
+        frame: false,
+        skipTaskbar: true,
+        resizable: false,
+        show: false,
+        parent: mainWindow,
+        webPreferences: {
+            preload: path.join(__dirname, 'preload-download-popup.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+        }
+    });
+    downloadPopupWindow.loadFile('download-popup.html');
+    downloadPopupWindow.setMaxListeners(20);
+    downloadPopupWindow.once('closed', () => {
+        downloadPopupWindow = null;
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('download-popup-closed');
+        }
+    });
+    downloadPopupWindow.once('ready-to-show', () => {
+        positionDownloadPopup();
+        downloadPopupWindow.show();
+    });
+}
+
 let TerminalManager;
 let EditorManager;
 const usageManager = require('./usage-manager');
@@ -133,34 +193,7 @@ async function handleAuthRedirect(event, authUrl, webContents) {
         if (openExternal) {
             openInExternalBrowser(authUrl);
         } else {
-            const browserName = browserDisplayName(externalBrowser);
-            const serviceName = authUrl.includes('google') ? 'Google' : 
-                               authUrl.includes('microsoft') ? 'Microsoft' : 
-                               authUrl.includes('github') ? 'GitHub' : 'external';
-            const warningHtml = `<!DOCTYPE html>
-            <html><head><title>Authentication Notice</title>
-            <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1e1e1e; color: #d4d4d4; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; padding: 20px; }
-                .container { text-align: center; max-width: 500px; background: #2d2d2d; padding: 30px; border-radius: 12px; border-left: 4px solid #f39c12; }
-                h1 { color: #f39c12; margin-bottom: 20px; }
-                p { line-height: 1.6; margin-bottom: 20px; }
-                button { background: #0e639c; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; }
-                button:hover { background: #1177bb; }
-            </style>
-            </head>
-            <body>
-            <div class="container">
-                <h1>Sign-in page detected</h1>
-                <p>This website uses ${serviceName} authentication.</p>
-                <p>For security and compatibility,<br><strong>sign-in works best in ${browserName}.</strong></p>
-                <button onclick="window.openExternal()">Open in ${browserName}</button>
-            </div>
-            <script>
-                window.openExternal = () => { require('electron').shell.openExternal('${authUrl}'); };
-            <\/script>
-            </body>
-            </html>`;
-            webContents.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(warningHtml)}`);
+            webContents.loadURL(authUrl);
         }
         return true;
     }
@@ -174,14 +207,14 @@ function attachAuthRedirectHandler(view) {
         if (handled) event.preventDefault();
     });
     view.webContents.on('will-redirect', async (event, navigationUrl) => {
-        if (isAuthPage(navigationUrl)) {
-            event.preventDefault();
-            openInExternalBrowser(navigationUrl);
-        }
+        // Let auth redirects load inside the browser
     });
     view.webContents.setWindowOpenHandler(({ url }) => {
-        if (isAuthPage(url)) { openInExternalBrowser(url); return { action: 'deny' }; }
-        return { action: 'allow' };
+        if (isAuthPage(url)) {
+            return { action: 'allow', overrideBrowserWindowOptions: { width: 800, height: 700, frame: true, autoHideMenuBar: true } };
+        }
+        sendToMainWindow('open-new-tab', { url, sourceId: currentBrowserTabId });
+        return { action: 'deny' };
     });
 }
 
@@ -250,12 +283,28 @@ function createWindow() {
         }
     });
     
-    mainWindow.on('closed', () => {
+    mainWindow.setMaxListeners(20);
+    mainWindow.once('closed', () => {
         contextSecurity.unregisterWindow(windowId);
         mainWindow = null;
     });
 
-    mainWindow.on('resize', () => resizeAllBrowserViews());
+    mainWindow.on('resize', () => {
+        resizeAllBrowserViews();
+        positionDownloadPopup();
+    });
+    mainWindow.on('move', () => positionDownloadPopup());
+    mainWindow.on('minimize', () => {
+        if (downloadPopupWindow && !downloadPopupWindow.isDestroyed()) {
+            downloadPopupWindow.hide();
+        }
+    });
+    mainWindow.on('restore', () => {
+        if (downloadPopupWindow && !downloadPopupWindow.isDestroyed()) {
+            downloadPopupWindow.show();
+            positionDownloadPopup();
+        }
+    });
     
     // Crash recovery and session restore
     mainWindow.webContents.once('did-finish-load', async () => {
@@ -453,14 +502,26 @@ function createEditorWindow() {
         return { action: 'deny' };
     });
     
-    editorWindow.on('closed', () => { editorWindow = null; });
-    editorWindow.webContents.on('crashed', () => { editorWindow = null; });
+    editorWindow.setMaxListeners(20);
+    editorWindow.once('closed', () => { editorWindow = null; });
+    editorWindow.webContents.on('crashed', () => {
+        const pipeline = require('./kafka-pipeline');
+        pipeline.crash({ type: 'editor-crashed', windowId: 'editor' });
+        editorWindow = null;
+    });
     console.log('✅ Editor window created');
 }
 
 function createTerminalWindow() {
     if (terminalWindow && !terminalWindow.isDestroyed()) {
         terminalWindow.focus();
+        const tm = app.terminalManager;
+        if (tm && tm.sessions) {
+            const s = tm.sessions.get('main');
+            if (!s || s.killed) {
+                terminalWindow.webContents.reload();
+            }
+        }
         return;
     }
 
@@ -502,7 +563,8 @@ function createTerminalWindow() {
         if (!url.startsWith('file://')) event.preventDefault();
     });
     
-    terminalWindow.on('closed', () => {
+    terminalWindow.setMaxListeners(20);
+    terminalWindow.once('closed', () => {
         terminalWindow = null;
         if (app.terminalManager) {
             try { app.terminalManager.killAllSessions(); } catch (err) { console.error(err); }
@@ -891,7 +953,102 @@ function setupIPCHandlers() {
     // Window management
     ipcMain.on('open-editor', () => { try { createEditorWindow(); } catch (err) { console.error(err); } });
     ipcMain.on('open-terminal', () => { try { createTerminalWindow(); } catch (err) { console.error(err); } });
-    ipcMain.on('open-premium-page', () => { shell.openExternal('https://noblehyve.com/premium'); });
+    ipcMain.on('open-premium-page', () => {
+        const url = 'https://mckenzie01.gumroad.com/l/yozdw';
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('open-new-tab', { url });
+            mainWindow.focus();
+            if (mainWindow.isMinimized()) mainWindow.restore();
+        } else {
+            shell.openExternal(url);
+        }
+    });
+    ipcMain.handle('set-default-browser', async () => {
+        try {
+            app.setAsDefaultProtocolClient('http');
+            app.setAsDefaultProtocolClient('https');
+            app.setAsDefaultProtocolClient('ftp');
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+    ipcMain.handle('is-default-browser', async () => {
+        try {
+            const isDefault = app.isDefaultProtocolClient('http');
+            return { isDefault };
+        } catch (error) {
+            return { isDefault: false, error: error.message };
+        }
+    });
+    ipcMain.on('open-pipeline-dashboard', () => { shell.openExternal('http://localhost:8080'); });
+
+    ipcMain.on('update-download-popup-state', (event, downloads) => {
+        sendToDownloadPopup(downloads);
+    });
+
+    ipcMain.on('show-download-popup', (event, downloads) => {
+        createDownloadPopupWindow();
+        sendToDownloadPopup(downloads || []);
+    });
+
+    ipcMain.on('hide-download-popup', () => {
+        if (downloadPopupWindow && !downloadPopupWindow.isDestroyed()) {
+            downloadPopupWindow.close();
+        }
+    });
+
+    ipcMain.on('popup-cancel-download', (event, id) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (win) win.close();
+        const dl = activeDownloads.get(id);
+        if (dl && dl.item && dl.item.getState() === 'progressing') {
+            dl.item.cancel();
+        }
+    });
+
+    ipcMain.on('popup-open-file', (event, filePath) => {
+        shell.showItemInFolder(filePath);
+    });
+
+    ipcMain.on('popup-view-all', (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (win) win.close();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('menu-action', 'downloads');
+        }
+    });
+
+    ipcMain.on('popup-clear-all', (event) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('popup-clear-all-downloads');
+        }
+    });
+
+    ipcMain.on('popup-close', (event) => {
+        const win = BrowserWindow.fromWebContents(event.sender);
+        if (win) win.close();
+    });
+
+    ipcMain.on('show-more-menu', (event) => {
+        const template = [
+            { label: 'New Tab', click: () => event.sender.send('menu-action', 'new-tab') },
+            { label: 'New Private Tab', click: () => event.sender.send('menu-action', 'private-tab') },
+            { label: 'History', click: () => event.sender.send('menu-action', 'history') },
+            { label: 'Downloads', click: () => event.sender.send('menu-action', 'downloads') },
+            { type: 'separator' },
+            { label: 'Zoom Out', click: () => event.sender.send('menu-action', 'zoom-out') },
+            { label: 'Reset Zoom', click: () => event.sender.send('menu-action', 'zoom-reset') },
+            { label: 'Zoom In', click: () => event.sender.send('menu-action', 'zoom-in') },
+            { label: 'Find on Page', click: () => event.sender.send('menu-action', 'find') },
+            { label: 'Print', click: () => event.sender.send('menu-action', 'print') },
+            { type: 'separator' },
+            { label: 'Developer Tools', click: () => event.sender.send('menu-action', 'devtools') },
+            { label: 'Settings', click: () => event.sender.send('menu-action', 'settings') },
+        ];
+        const menu = Menu.buildFromTemplate(template);
+        menu.popup({ window: mainWindow });
+    });
 
     // ============ PREMIUM LICENSE HANDLERS ============
     ipcMain.handle('license:get-status', async () => {
@@ -901,14 +1058,35 @@ function setupIPCHandlers() {
 
     ipcMain.handle('license:activate', async (event, licenseKey) => {
         const licenseManager = require('./license-manager');
-        const result = licenseManager.activateLicense(licenseKey);
-        if (result.success) usageManager.resetOnPremium();
+        const result = await licenseManager.activateLicense(licenseKey);
+        if (result.success) {
+            usageManager.resetOnPremium();
+            try {
+                const cloudflare = require('./cloudflare');
+                const migrateResult = await cloudflare.migrateToPremium();
+                result.migration = migrateResult;
+            } catch (err) {
+                console.error('Cloud migration on activate failed:', err.message);
+                result.migration = { success: false, error: err.message };
+            }
+        }
         return result;
     });
 
     ipcMain.handle('license:deactivate', async () => {
         const licenseManager = require('./license-manager');
-        return licenseManager.deactivateLicense();
+        const result = licenseManager.deactivateLicense();
+        if (result.success) {
+            try {
+                const cloudflare = require('./cloudflare');
+                const downgradeResult = await cloudflare.downgradeToFree();
+                result.migration = downgradeResult;
+            } catch (err) {
+                console.error('Cloud downgrade on deactivate failed:', err.message);
+                result.migration = { success: false, error: err.message };
+            }
+        }
+        return result;
     });
 
     ipcMain.handle('license:is-premium', async () => {
@@ -916,27 +1094,59 @@ function setupIPCHandlers() {
         return { isPremium: licenseManager.isPremiumUser() };
     });
 
-    ipcMain.handle('usage:get-status', async () => {
-        return usageManager.getStatus();
+    // Auto-downgrade when subscription expires
+    const licenseManager = require('./license-manager');
+    licenseManager.on('status-changed', async ({ isPremium, reason }) => {
+        if (!isPremium && (reason === 'subscription_ended' || reason === 'license_removed')) {
+            console.log('Subscription expired — auto-downgrading cloud storage to free');
+            try {
+                const cloudflare = require('./cloudflare');
+                await cloudflare.downgradeToFree();
+            } catch (err) {
+                console.error('Auto-downgrade failed:', err.message);
+            }
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('premium-status-changed', { isPremium: false, reason });
+            }
+        }
     });
 
-    // Editor cloud storage (premium feature)
+    ipcMain.handle('usage:get-status', async () => {
+        const licenseManager = require('./license-manager');
+        const isPremium = licenseManager.isPremiumUser();
+        const status = usageManager.getStatus();
+        try {
+            const cloudflare = require('./cloudflare');
+            const stats = await cloudflare.getStorageStats(null, isPremium);
+            status.cloudBytesUsed = stats.success ? stats.totalSize : (status.cloudBytesUsed || 0);
+            status.cloudFileCount = stats.success ? stats.fileCount : 0;
+        } catch {
+            status.cloudBytesUsed = status.cloudBytesUsed || 0;
+            status.cloudFileCount = 0;
+        }
+        return status;
+    });
+
+    // Editor cloud storage
     // Uses local persistent UUID (not Supabase ID) so files are always recoverable
     // regardless of login state. This avoids the bug where changing login status
     // makes previously saved files disappear.
     ipcMain.handle('editor:cloud-upload', async (event, { filename, encryptedContent }) => {
         const licenseManager = require('./license-manager');
-        if (!usageManager.canCloudSave()) {
-            return { success: false, error: 'Free limit reached (5 cloud saves). Upgrade to Premium for unlimited use.', requiresPremium: true };
-        }
-        if (usageManager.isOverMaxBytes(Buffer.byteLength(encryptedContent, 'utf8'))) {
-            return { success: false, error: 'Free limit: files must be under 5MB. Upgrade to Premium for larger files.', requiresPremium: true };
-        }
+        const isPremium = licenseManager.isPremiumUser();
+        const fileBytes = Buffer.byteLength(encryptedContent, 'utf8');
+        const maxBytes = usageManager.getCloudMaxBytes();
         try {
             const cloudflare = require('./cloudflare');
-            const result = await cloudflare.uploadFile(filename, encryptedContent);
-            if (result.success) usageManager.incrementCloudSave();
-            return result;
+            const stats = await cloudflare.getStorageStats(null, isPremium, true);
+            if (!stats.success) {
+                return { success: false, error: 'Could not verify cloud storage usage. Please try again.' };
+            }
+            if (stats.totalSize + fileBytes > maxBytes) {
+                const maxMB = Math.round(maxBytes / (1024 * 1024));
+                return { success: false, error: `Cloud storage limit reached (${maxMB} MB). Delete some files or upgrade to Premium.`, requiresPremium: !isPremium };
+            }
+            return await cloudflare.uploadFile(filename, encryptedContent, null, isPremium);
         } catch (error) {
             return { success: false, error: error.message };
         }
@@ -944,12 +1154,10 @@ function setupIPCHandlers() {
 
     ipcMain.handle('editor:cloud-download', async (event, { filename }) => {
         const licenseManager = require('./license-manager');
-        if (!licenseManager.isPremiumUser()) {
-            return { success: false, error: 'Premium feature - Upgrade to use cloud storage', requiresPremium: true };
-        }
+        const isPremium = licenseManager.isPremiumUser();
         try {
             const cloudflare = require('./cloudflare');
-            return await cloudflare.downloadFile(filename);
+            return await cloudflare.downloadFile(filename, null, isPremium);
         } catch (error) {
             return { success: false, error: error.message };
         }
@@ -957,12 +1165,10 @@ function setupIPCHandlers() {
 
     ipcMain.handle('editor:cloud-list', async () => {
         const licenseManager = require('./license-manager');
-        if (!licenseManager.isPremiumUser()) {
-            return { success: false, error: 'Premium feature - Upgrade to use cloud storage', files: [], requiresPremium: true };
-        }
+        const isPremium = licenseManager.isPremiumUser();
         try {
             const cloudflare = require('./cloudflare');
-            return await cloudflare.listFiles();
+            return await cloudflare.listFiles(null, isPremium);
         } catch (error) {
             return { success: false, error: error.message, files: [] };
         }
@@ -970,12 +1176,10 @@ function setupIPCHandlers() {
 
     ipcMain.handle('editor:cloud-delete', async (event, { filename }) => {
         const licenseManager = require('./license-manager');
-        if (!licenseManager.isPremiumUser()) {
-            return { success: false, error: 'Premium feature - Upgrade to use cloud storage', requiresPremium: true };
-        }
+        const isPremium = licenseManager.isPremiumUser();
         try {
             const cloudflare = require('./cloudflare');
-            return await cloudflare.deleteFile(filename);
+            return await cloudflare.deleteFile(filename, null, isPremium);
         } catch (error) {
             return { success: false, error: error.message };
         }
@@ -1091,19 +1295,14 @@ function setupIPCHandlers() {
         return decrypted;
     });
 
-    // Encrypted local file handlers (premium feature)
+    // Encrypted local file handlers
     ipcMain.handle('save-encrypted-file', async (event, { filename, content, password }) => {
-        const licenseManager = require('./license-manager');
-        if (!usageManager.canLocalEncrypt()) {
-            return { success: false, error: 'Free limit reached (5 local encrypts). Upgrade to Premium for unlimited use.', requiresPremium: true };
-        }
         try {
             const encryption = require('./encryption');
             const encrypted = encryption.encryptData(content, password);
             const desktopPath = app.getPath('desktop');
             const filePath = path.join(desktopPath, filename);
             await fs.writeFile(filePath, encrypted, 'utf8');
-            if (!licenseManager.isPremiumUser()) usageManager.incrementLocalEncrypt();
             return { success: true, path: filePath };
         } catch (error) {
             return { success: false, error: error.message };
@@ -1111,10 +1310,6 @@ function setupIPCHandlers() {
     });
 
     ipcMain.handle('read-encrypted-file', async (event, { filePath, password }) => {
-        const licenseManager = require('./license-manager');
-        if (!licenseManager.isPremiumUser()) {
-            return { success: false, error: 'Premium feature - Upgrade to use encrypted storage', requiresPremium: true };
-        }
         try {
             const encrypted = await fs.readFile(filePath, 'utf8');
             const encryption = require('./encryption');
@@ -1125,6 +1320,20 @@ function setupIPCHandlers() {
             return { success: true, content: decrypted };
         } catch (error) {
             return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('list-encrypted-files', async () => {
+        try {
+            const desktopPath = app.getPath('desktop');
+            const files = await fs.readdir(desktopPath);
+            const encFiles = files.filter(f => f.endsWith('.enc')).map(f => ({
+                name: f,
+                path: path.join(desktopPath, f)
+            }));
+            return { success: true, files: encFiles };
+        } catch (error) {
+            return { success: false, error: error.message, files: [] };
         }
     });
 
@@ -1153,10 +1362,18 @@ function setupIPCHandlers() {
 
     ipcMain.handle('cloud:get-status', async () => {
         try {
+            const licenseManager = require('./license-manager');
+            const isPremium = licenseManager.isPremiumUser();
             const cloudflare = require('./cloudflare');
-            return { configured: cloudflare.hasCredentials(), connected: cloudflare.isConnected() };
+            const stats = await cloudflare.getStorageStats(null, isPremium);
+            return {
+                configured: cloudflare.hasCredentials(),
+                connected: cloudflare.isConnected(),
+                isPremium,
+                stats: stats.success ? stats : null
+            };
         } catch {
-            return { configured: false, connected: false };
+            return { configured: false, connected: false, stats: null };
         }
     });
 
@@ -1172,8 +1389,10 @@ function setupIPCHandlers() {
 
     ipcMain.handle('cloud:list-files', async () => {
         try {
+            const licenseManager = require('./license-manager');
+            const isPremium = licenseManager.isPremiumUser();
             const cloudflare = require('./cloudflare');
-            return await cloudflare.listFiles();
+            return await cloudflare.listFiles(null, isPremium);
         } catch (error) {
             return { success: false, error: error.message, files: [] };
         }
@@ -1182,6 +1401,41 @@ function setupIPCHandlers() {
     ipcMain.on('toggle-editor-devtools', () => {
         if (editorWindow && !editorWindow.isDestroyed()) editorWindow.webContents.toggleDevTools();
     });
+
+    // ============ DATA PIPELINE (Kafka) ============
+    ipcMain.handle('pipeline:event', async (event, { topic, data }) => {
+        const pipeline = require('./kafka-pipeline');
+        await pipeline.raw(topic, data);
+    });
+
+    ipcMain.handle('pipeline:get-recent', (event, { limit, severity }) => {
+        const pipeline = require('./kafka-pipeline');
+        return pipeline.getRecent(limit, severity);
+    });
+
+    ipcMain.handle('pipeline:get-counts', () => {
+        const pipeline = require('./kafka-pipeline');
+        return pipeline.getCounts();
+    });
+
+    ipcMain.handle('pipeline:export-json', (event, { severity }) => {
+        const pipeline = require('./kafka-pipeline');
+        return pipeline.exportJson(severity);
+    });
+}
+
+// ============ DATA PIPELINE HELPERS ============
+function wirePipeline() {
+    const pipeline = require('./kafka-pipeline');
+    pipeline.connect();
+
+    // Capture all console.error as pipeline errors
+    const origConsoleError = console.error;
+    console.error = function (...args) {
+        origConsoleError.apply(console, args);
+        const msg = args.map(a => typeof a === 'string' ? a : a?.message || a?.stack || JSON.stringify(a)).join(' ');
+        pipeline.crash({ type: 'console-error', message: msg, stack: new Error().stack });
+    };
 }
 
 // ============ APP LIFECYCLE ============
@@ -1238,7 +1492,7 @@ app.whenReady().then(async () => {
     
     try {
         TerminalManager = require('./terminal-manager');
-        app.terminalManager = new TerminalManager();
+        app.terminalManager = new TerminalManager(() => createTerminalWindow());
         console.log('Terminal manager loaded successfully');
     } catch (error) {
         console.log('Terminal manager not loaded:', error.message);
@@ -1257,6 +1511,15 @@ app.whenReady().then(async () => {
     }
     
     setupIPCHandlers();
+    wirePipeline();
+    if (process.argv.includes('--pipeline-server')) {
+        try {
+            const { start } = require('./pipeline-server');
+            start();
+        } catch (err) {
+            console.error('Failed to start pipeline server:', err.message);
+        }
+    }
     createWindow();
 });
 
@@ -1276,7 +1539,25 @@ app.on('before-quit', () => {
     if (app.terminalManager) {
         try { app.terminalManager.killAllSessions(); } catch (err) { console.error(err); }
     }
+    const pipeline = require('./kafka-pipeline');
+    pipeline.disconnect();
 });
 
-process.on('uncaughtException', (error) => console.error('Uncaught Exception:', error));
-process.on('unhandledRejection', (reason, promise) => console.error('Unhandled Rejection:', reason));
+process.on('uncaughtException', (error) => {
+    const pipeline = require('./kafka-pipeline');
+    pipeline.crash({ type: 'uncaught-exception', message: error.message, stack: error.stack });
+    console.error('Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+    const pipeline = require('./kafka-pipeline');
+    pipeline.crash({ type: 'unhandled-rejection', message: reason?.message || String(reason), stack: reason?.stack });
+    console.error('Unhandled Rejection:', reason);
+});
+
+app.on('web-contents-created', (_, contents) => {
+    contents.on('render-process-gone', (event, details) => {
+        const pipeline = require('./kafka-pipeline');
+        pipeline.crash({ type: 'render-process-gone', reason: details.reason, exitCode: details.exitCode });
+    });
+});

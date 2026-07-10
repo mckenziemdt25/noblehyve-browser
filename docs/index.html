@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NobleHyve Premium - Cloud Storage & Encryption</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⭐</text></svg>">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0d1117; color: #c9d1d9;
+            line-height: 1.6;
+        }
+        .container { max-width: 800px; margin: 0 auto; padding: 40px 20px; }
+        .header { text-align: center; margin-bottom: 48px; }
+        .header h1 { font-size: 2.5em; margin-bottom: 8px; background: linear-gradient(135deg, #58a6ff, #bc8cff); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .header p { color: #8b949e; font-size: 1.1em; }
+        .badge { display: inline-block; background: rgba(88,166,255,0.15); color: #58a6ff; padding: 4px 12px; border-radius: 20px; font-size: 0.85em; margin-bottom: 16px; }
+        .pricing-card {
+            background: #161b22; border: 1px solid #30363d; border-radius: 12px;
+            padding: 40px; text-align: center; margin-bottom: 32px;
+            position: relative; overflow: hidden;
+        }
+        .pricing-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0;
+            height: 3px; background: linear-gradient(90deg, #58a6ff, #bc8cff);
+        }
+        .price { font-size: 3em; font-weight: 700; color: #f0f6fc; margin: 16px 0; }
+        .price span { font-size: 0.4em; color: #8b949e; font-weight: 400; }
+        .features { list-style: none; margin: 24px 0; text-align: left; display: inline-block; }
+        .features li { padding: 8px 0; color: #c9d1d9; }
+        .features li::before { content: '✅ '; margin-right: 8px; }
+        .btn {
+            display: inline-block; padding: 14px 48px; border-radius: 8px;
+            font-size: 1.1em; font-weight: 600; text-decoration: none;
+            cursor: pointer; border: none; transition: all 0.2s;
+        }
+        .btn-primary { background: linear-gradient(135deg, #238636, #2ea043); color: #fff; }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(46,160,67,0.3); }
+        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn-outline { background: transparent; color: #58a6ff; border: 1px solid #58a6ff; margin-left: 12px; }
+        .btn-outline:hover { background: rgba(88,166,255,0.1); }
+        .how-it-works { margin: 48px 0; }
+        .how-it-works h2 { text-align: center; margin-bottom: 24px; color: #f0f6fc; }
+        .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+        .step { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 24px; text-align: center; }
+        .step .num { width: 32px; height: 32px; background: linear-gradient(135deg, #58a6ff, #bc8cff); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; margin-bottom: 12px; color: #fff; }
+        .step h3 { font-size: 1em; margin-bottom: 8px; }
+        .step p { font-size: 0.9em; color: #8b949e; }
+
+        .faq { margin: 48px 0; }
+        .faq h2 { text-align: center; margin-bottom: 24px; color: #f0f6fc; }
+        .faq-item { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 12px; }
+        .faq-item h3 { font-size: 1em; margin-bottom: 4px; color: #f0f6fc; cursor: pointer; }
+        .faq-item h3:hover { color: #58a6ff; }
+        .faq-item p { font-size: 0.9em; color: #8b949e; display: none; margin-top: 8px; }
+        .faq-item.open p { display: block; }
+
+        .footer { text-align: center; color: #484f58; font-size: 0.85em; padding: 24px 0; border-top: 1px solid #21262d; margin-top: 48px; }
+        .footer a { color: #58a6ff; text-decoration: none; }
+
+        .toast {
+            position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+            background: #21262d; color: #c9d1d9; padding: 12px 24px;
+            border-radius: 8px; font-size: 0.9em; border: 1px solid #30363d;
+            display: none; z-index: 1000;
+        }
+        .toast.error { border-color: #da3633; color: #ff7b72; }
+        .toast.success { border-color: #238636; color: #3fb950; }
+
+        .mode-toggle { text-align: center; margin-bottom: 24px; }
+        .mode-toggle label { color: #8b949e; font-size: 0.85em; cursor: pointer; }
+        .mode-toggle input { margin-right: 6px; }
+
+        @media (max-width: 600px) {
+            .header h1 { font-size: 1.8em; }
+            .pricing-card { padding: 24px; }
+            .price { font-size: 2.2em; }
+            .btn { width: 100%; }
+            .btn-outline { margin: 8px 0 0 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="badge">⭐ Premium License</div>
+            <h1>NobleHyve Premium</h1>
+            <p>5 GB encrypted cloud storage for your code editor</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:32px">
+            <div class="pricing-card" style="margin-bottom:0">
+                <h2>Monthly</h2>
+                <div class="price">$5 <span>/month</span></div>
+                <ul class="features">
+                    <li><strong>5 GB</strong> encrypted cloud storage</li>
+                    <li>Unlimited local file encryption</li>
+                    <li>Unlimited file uploads (no file count limit)</li>
+                    <li>End-to-end encrypted with your password</li>
+                    <li>Cloudflare R2 backed storage</li>
+                    <li>Cancel anytime</li>
+                </ul>
+                <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:24px">
+                    <button class="btn btn-primary" onclick="startCheckout('monthly')">
+                        Subscribe — $10/month
+                    </button>
+                </div>
+            </div>
+            <div class="pricing-card" style="margin-bottom:0;border-color:#58a6ff">
+                <div class="badge" style="margin-bottom:8px">Best Value</div>
+                <h2>Yearly</h2>
+                <div class="price">$100 <span>/year</span></div>
+                <ul class="features">
+                    <li><strong>5 GB</strong> encrypted cloud storage</li>
+                    <li>Unlimited local file encryption</li>
+                    <li>Unlimited file uploads (no file count limit)</li>
+                    <li>End-to-end encrypted with your password</li>
+                    <li>Cloudflare R2 backed storage</li>
+                    <li>Save 17% vs monthly</li>
+                </ul>
+                <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px;margin-top:24px">
+                    <button class="btn btn-primary" onclick="startCheckout('yearly')">
+                        Subscribe — $100/year
+                    </button>
+                </div>
+            </div>
+        </div>
+        <p style="text-align:center;margin-bottom:24px;font-size:0.85em;color:#484f58">
+            Powered by Gumroad · Secure checkout · Cancel anytime
+        </p>
+
+        <div class="mode-toggle">
+            <label>
+                <input type="checkbox" id="demoMode" onchange="toggleDemo()">
+                Demo mode (no payment required for testing)
+            </label>
+        </div>
+
+        <div class="how-it-works">
+            <h2>How It Works</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="num">1</div>
+                    <h3>Subscribe</h3>
+                    <p>Choose monthly or yearly via Gumroad</p>
+                </div>
+                <div class="step">
+                    <div class="num">2</div>
+                    <h3>Get Your Key</h3>
+                    <p>License key is generated and displayed</p>
+                </div>
+                <div class="step">
+                    <div class="num">3</div>
+                    <h3>Activate</h3>
+                    <p>Paste key in NobleHyve Settings → Premium</p>
+                </div>
+                <div class="step">
+                    <div class="num">4</div>
+                    <h3>Enjoy</h3>
+                    <p>5 GB encrypted cloud storage & unlimited local encryption</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="faq">
+            <h2>FAQ</h2>
+            <div class="faq-item">
+                <h3 onclick="toggleFaq(this)">Is this a subscription?</h3>
+                <p>Yes. You can choose between $5/month or $50/year. Cancel anytime. Your license key remains active for the duration you've paid for.</p>
+            </div>
+            <div class="faq-item">
+                <h3 onclick="toggleFaq(this)">What payment methods are accepted?</h3>
+                <p>Gumroad supports credit/debit cards, and many local payment methods worldwide.</p>
+            </div>
+            <div class="faq-item">
+                <h3 onclick="toggleFaq(this)">Is my data end-to-end encrypted?</h3>
+                <p>Yes. All files are encrypted with your password before leaving your machine. Neither NobleHyve nor Cloudflare can read your files.</p>
+            </div>
+            <div class="faq-item">
+                <h3 onclick="toggleFaq(this)">Can I use my license on multiple machines?</h3>
+                <p>Yes, your license key works on all your personal devices.</p>
+            </div>
+            <div class="faq-item">
+                <h3 onclick="toggleFaq(this)">What's the free tier limit?</h3>
+                <p>Free users get 100 MB of encrypted cloud storage with unlimited file uploads and unlimited local encryption. Premium unlocks 5 GB of cloud storage.</p>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>NobleHyve Browser · Made with ❤️</p>
+            <p><a href="https://github.com/noblehyve/browser">GitHub</a></p>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // Config — update these for your deployment
+        const CONFIG = {
+            licenseServerUrl: 'https://mckenzie01.gumroad.com/l/yozdw',
+            demoMode: false
+        };
+
+        function showToast(msg, type) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + (type || '');
+            t.style.display = 'block';
+            setTimeout(() => t.style.display = 'none', 4000);
+        }
+
+        function toggleDemo() {
+            CONFIG.demoMode = document.getElementById('demoMode').checked;
+        }
+
+        function startCheckout(plan) {
+            window.location.href = CONFIG.licenseServerUrl;
+        }
+
+        function toggleFaq(el) {
+            el.parentElement.classList.toggle('open');
+        }
+
+        // Detect if demo from URL param
+        if (new URLSearchParams(window.location.search).get('demo') === '1') {
+            document.getElementById('demoMode').checked = true;
+            CONFIG.demoMode = true;
+        }
+    </script>
+</body>
+</html>

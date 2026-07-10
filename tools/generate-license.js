@@ -6,6 +6,12 @@
 // Example: node tools/generate-license.js user@example.com
 //          node tools/generate-license.js  (generates a random ID)
 
+// ========================================================================
+// DEPRECATED — replaced by Gumroad license verification
+// License generation is now handled by Gumroad's checkout flow.
+// See SETUP-GUMROAD.md for the new setup.
+// ========================================================================
+
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');

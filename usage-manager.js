@@ -4,9 +4,11 @@ const path = require('path');
 const licenseManager = require('./license-manager');
 
 const FREE_LIMITS = {
-    cloudSaves: 5,
-    localEncrypts: 5,
-    cloudMaxBytes: 5 * 1024 * 1024
+    cloudMaxBytes: 100 * 1024 * 1024
+};
+
+const PREMIUM_LIMITS = {
+    cloudMaxBytes: 5 * 1024 * 1024 * 1024
 };
 
 class UsageManager {
@@ -23,7 +25,7 @@ class UsageManager {
         } catch (err) {
             console.error('Failed to load usage:', err.message);
         }
-        return { cloudSaves: 0, localEncrypts: 0 };
+        return {};
     }
 
     save() {
@@ -38,46 +40,16 @@ class UsageManager {
         const isPremium = licenseManager.isPremiumUser();
         return {
             isPremium,
-            cloudSaves: { used: this.usage.cloudSaves, limit: FREE_LIMITS.cloudSaves, remaining: Math.max(0, FREE_LIMITS.cloudSaves - this.usage.cloudSaves) },
-            localEncrypts: { used: this.usage.localEncrypts, limit: FREE_LIMITS.localEncrypts, remaining: Math.max(0, FREE_LIMITS.localEncrypts - this.usage.localEncrypts) },
-            cloudMaxBytes: isPremium ? Infinity : FREE_LIMITS.cloudMaxBytes
+            cloudMaxBytes: isPremium ? PREMIUM_LIMITS.cloudMaxBytes : FREE_LIMITS.cloudMaxBytes
         };
     }
 
-    incrementCloudSave() {
-        if (licenseManager.isPremiumUser()) return true;
-        if (this.usage.cloudSaves >= FREE_LIMITS.cloudSaves) return false;
-        this.usage.cloudSaves++;
-        this.save();
-        return true;
-    }
-
-    incrementLocalEncrypt() {
-        if (licenseManager.isPremiumUser()) return true;
-        if (this.usage.localEncrypts >= FREE_LIMITS.localEncrypts) return false;
-        this.usage.localEncrypts++;
-        this.save();
-        return true;
-    }
-
-    canCloudSave() {
-        if (licenseManager.isPremiumUser()) return true;
-        return this.usage.cloudSaves < FREE_LIMITS.cloudSaves;
-    }
-
-    canLocalEncrypt() {
-        if (licenseManager.isPremiumUser()) return true;
-        return this.usage.localEncrypts < FREE_LIMITS.localEncrypts;
-    }
-
-    isOverMaxBytes(bytes) {
-        if (licenseManager.isPremiumUser()) return false;
-        return bytes > FREE_LIMITS.cloudMaxBytes;
+    getCloudMaxBytes() {
+        return licenseManager.isPremiumUser() ? PREMIUM_LIMITS.cloudMaxBytes : FREE_LIMITS.cloudMaxBytes;
     }
 
     resetOnPremium() {
-        this.usage.cloudSaves = 0;
-        this.usage.localEncrypts = 0;
+        this.usage = {};
         this.save();
     }
 }

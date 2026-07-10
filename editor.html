@@ -6,6 +6,7 @@
     <link rel="stylesheet" href="node_modules/codemirror/lib/codemirror.css" />
     <link rel="stylesheet" href="node_modules/codemirror/theme/dracula.css" />
     <link rel="stylesheet" href="node_modules/codemirror/addon/fold/foldgutter.css" />
+    <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css" />
     
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -50,6 +51,7 @@
         .toolbar-btn.cloud-btn { color: #ffa726; }
         .toolbar-btn.cloud-btn:hover { background: rgba(255,167,38,0.15); border-color: rgba(255,167,38,0.25); }
         .toolbar-btn:disabled { opacity: 0.4; pointer-events: none; }
+        .toolbar-btn.active { background: rgba(0,122,204,0.2); border-color: rgba(0,122,204,0.4); color: #4fc3f7; }
 
         .toolbar-separator {
             width: 1px; height: 20px;
@@ -137,40 +139,99 @@
         .editor-container { flex: 1; position: relative; overflow: hidden; min-height: 100px; }
         .CodeMirror { height: 100% !important; font-size: 13px; }
 
-        /* ===== OUTPUT PANEL ===== */
-        .output-panel {
-            flex-shrink: 0; height: 200px;
+        /* ===== BOTTOM PANEL (Terminal + Output) ===== */
+        .bottom-panel {
+            flex-shrink: 0; height: 250px;
             background: #1e1e1e; border-top: 1px solid #3e3e3e;
             display: none; flex-direction: column;
+            position: relative;
         }
-        .output-header {
-            display: flex; justify-content: space-between; align-items: center;
-            padding: 5px 12px; background: #252526;
-            border-bottom: 1px solid #3e3e3e;
-            font-size: 11px; color: #888; flex-shrink: 0;
+        .bottom-panel.open { display: flex; }
+        .panel-tabs {
+            display: flex; align-items: center;
+            padding: 0 12px; background: #252526;
+            border-bottom: 1px solid #3e3e3e; flex-shrink: 0;
+            gap: 0;
+        }
+        .panel-tab {
+            padding: 6px 14px; font-size: 11px; color: #888;
+            cursor: pointer; border-bottom: 2px solid transparent;
             text-transform: uppercase; letter-spacing: 0.06em;
+            transition: all 0.12s ease; user-select: none;
         }
-        .output-actions { display: flex; gap: 2px; }
-        .output-action-btn {
-            background: none; border: none; color: #666;
-            cursor: pointer; padding: 2px 6px; font-size: 12px;
-            border-radius: 3px; transition: all 0.12s ease;
+        .panel-tab:hover { color: #ccc; }
+        .panel-tab.active {
+            color: #e0e0e0;
+            border-bottom-color: #007acc;
         }
-        .output-action-btn:hover { background: rgba(255,255,255,0.08); color: #ccc; }
-        .output-content {
-            flex: 1; overflow-y: auto;
-            padding: 8px 14px;
+        .panel-tab .tab-badge {
+            display: inline-block; margin-left: 4px;
+            font-size: 10px; opacity: 0.6;
+        }
+        .panel-body {
+            flex: 1; overflow: hidden; position: relative;
+        }
+        .panel-body > .tab-content {
+            display: none; width: 100%; height: 100%;
+        }
+        .panel-body > .tab-content.active { display: block; }
+        #terminalContainer { padding: 0; }
+        #terminalContainer .xterm { height: 100%; padding: 4px; }
+        #terminalContainer .xterm-viewport { scrollbar-width: thin; }
+        
+        /* Output inside bottom panel */
+        .panel-output {
+            padding: 6px 14px;
             font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
             font-size: 13px; color: #d4d4d4;
             white-space: pre-wrap; word-wrap: break-word;
-            line-height: 1.6; scrollbar-width: thin;
+            line-height: 1.5; overflow-y: auto; height: 100%;
+            scrollbar-width: thin;
             scrollbar-color: rgba(255,255,255,0.08) transparent;
         }
-        .output-content .output-stdout { color: #d4d4d4; }
-        .output-content .output-stderr { color: #f48771; }
-        .output-content .output-error { color: #f44747; }
-        .output-content .output-info { color: #6a9955; }
-        .output-content .output-warn { color: #d7ba7d; }
+        .panel-output .output-stdout { color: #d4d4d4; }
+        .panel-output .output-stderr { color: #f48771; }
+        .panel-output .output-error { color: #f44747; }
+        .panel-output .output-info { color: #6a9955; }
+        .panel-output .output-warn { color: #d7ba7d; }
+        
+        /* Resize handle (sits between editor and bottom panel) */
+        .panel-resize-handle {
+            flex-shrink: 0; height: 8px;
+            cursor: ns-resize; z-index: 10;
+            background: #252526;
+            border-top: 1px solid #3e3e3e;
+            border-bottom: 1px solid #3e3e3e;
+            display: none;
+            align-items: center; justify-content: center;
+            position: relative;
+            transition: background 0.15s;
+        }
+        .panel-resize-handle::after {
+            content: ''; width: 40px; height: 3px;
+            background: rgba(255,255,255,0.25);
+            border-radius: 2px; transition: background 0.15s;
+        }
+        .panel-resize-handle:hover { background: #2d2d2d; }
+        .panel-resize-handle:hover::after { background: #007acc; }
+        .panel-resize-handle.active::after { background: #007acc; }
+        body.light-theme .panel-resize-handle { background: #e0e0e0; border-color: #d0d0d0; }
+        body.light-theme .panel-resize-handle { height: 8px; }
+        body.light-theme .panel-resize-handle::after { background: rgba(0,0,0,0.2); }
+        body.light-theme .panel-resize-handle:hover { background: #d0d0d0; }
+        body.light-theme .panel-resize-handle:hover::after { background: #007acc; }
+        
+        .panel-actions {
+            display: flex; align-items: center; gap: 4px;
+            margin-left: auto;
+        }
+        .panel-action-btn {
+            background: none; border: none; color: #666;
+            cursor: pointer; padding: 3px 6px; font-size: 12px;
+            border-radius: 3px; transition: all 0.12s ease;
+            line-height: 1;
+        }
+        .panel-action-btn:hover { background: rgba(255,255,255,0.08); color: #ccc; }
 
         /* ===== PREVIEW ===== */
         .preview-overlay {
@@ -223,7 +284,6 @@
             top: 0; left: 0; right: 0; bottom: 0;
             background: rgba(0,0,0,0.7);
             z-index: 20000; align-items: center; justify-content: center;
-            backdrop-filter: blur(4px);
         }
         .modal-content {
             background: #2d2d2d;
@@ -256,6 +316,114 @@
         .modal-btn.secondary { background: rgba(255,255,255,0.08); color: #ccc; }
         .modal-btn.secondary:hover { background: rgba(255,255,255,0.14); }
 
+        /* ===== CLOUD SAVE BACKGROUND ===== */
+        @keyframes cloudFloat1 {
+            0%, 100% { transform: translate(0, 0); }
+            33% { transform: translate(30px, -8px); }
+            66% { transform: translate(-20px, -12px); }
+        }
+        @keyframes cloudFloat2 {
+            0%, 100% { transform: translate(0, 0); }
+            33% { transform: translate(-25px, -10px); }
+            66% { transform: translate(15px, -5px); }
+        }
+
+        .modal.cloud-save {
+            background:
+                radial-gradient(ellipse 300px 200px at 80% 8%, rgba(255,200,100,0.15) 0%, transparent 100%),
+                linear-gradient(165deg, #0a2647 0%, #1a5276 30%, #2e86c1 55%, #85c1e9 80%, #d6eaf8 100%);
+            backdrop-filter: none;
+        }
+        .modal.cloud-save .modal-content {
+            position: relative;
+            z-index: 1;
+        }
+        .modal.cloud-save::before,
+        .modal.cloud-save::after {
+            content: '';
+            position: absolute;
+            pointer-events: none;
+            z-index: 0;
+            border-radius: 50%;
+        }
+        .modal.cloud-save::before {
+            width: 220px; height: 60px;
+            background: rgba(255,255,255,0.10);
+            border-radius: 60px;
+            top: 12%; left: 8%;
+            box-shadow:
+                50px -18px 0 8px rgba(255,255,255,0.08),
+                110px -28px 0 0 rgba(255,255,255,0.10),
+                150px 5px 0 -8px rgba(255,255,255,0.05),
+                -35px -8px 0 5px rgba(255,255,255,0.06);
+            animation: cloudFloat1 14s ease-in-out infinite;
+        }
+        .modal.cloud-save::after {
+            width: 160px; height: 45px;
+            background: rgba(255,255,255,0.07);
+            border-radius: 45px;
+            bottom: 20%; right: 10%;
+            box-shadow:
+                35px -14px 0 6px rgba(255,255,255,0.05),
+                80px -22px 0 0 rgba(255,255,255,0.07),
+                -20px 0 0 3px rgba(255,255,255,0.04);
+            animation: cloudFloat2 18s ease-in-out infinite;
+        }
+
+        /* ===== CLOUD FILE PICKER ===== */
+        .modal-content.file-picker {
+            max-width: 420px; max-height: 80vh;
+            display: flex; flex-direction: column;
+            padding: 20px;
+        }
+        .file-picker-search {
+            width: 100%; padding: 8px 12px;
+            margin-bottom: 12px;
+            background: #3c3c3c; border: 1px solid #555;
+            border-radius: 6px; color: #fff; font-size: 13px;
+            outline: none; transition: border-color 0.15s ease;
+        }
+        .file-picker-search:focus { border-color: #007acc; }
+        .file-picker-list {
+            flex: 1; overflow-y: auto;
+            max-height: 300px;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255,255,255,0.1) transparent;
+        }
+        .file-picker-item {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 12px; margin-bottom: 4px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 6px; cursor: pointer;
+            transition: all 0.12s ease;
+            font-size: 13px; color: #ccc;
+        }
+        .file-picker-item:hover {
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+        }
+        .file-picker-item:active {
+            transform: scale(0.98);
+        }
+        .file-picker-item .file-icon { font-size: 16px; flex-shrink: 0; }
+        .file-picker-item .file-name {
+            flex: 1; overflow: hidden;
+            text-overflow: ellipsis; white-space: nowrap;
+        }
+        .file-picker-count {
+            font-size: 11px; color: #888;
+            text-align: center; margin-top: 8px;
+        }
+        body.light-theme .file-picker-search { background: #f5f5f5; border-color: #ccc; color: #333; }
+        body.light-theme .file-picker-item { background: rgba(0,0,0,0.04); color: #555; }
+        body.light-theme .file-picker-item:hover { background: rgba(0,0,0,0.08); color: #222; }
+        body.light-theme .file-picker-count { color: #aaa; }
+
+        /* Encrypted file picker - purple/cyan accent */
+        .encrypt-picker h3 { color: #ce93d8; }
+        .encrypt-picker .file-picker-search { border-color: #7b1fa2; }
+        .encrypt-picker .file-picker-search:focus { border-color: #ce93d8; }
+
         /* ===== LIGHT THEME OVERRIDES ===== */
         body.light-theme { background: #f5f5f5; color: #333; }
         body.light-theme .toolbar { background: #e8e8e8; border-color: #ddd; }
@@ -269,21 +437,45 @@
         body.light-theme .tab { background: #e8e8e8; color: #666; border-color: #ddd; }
         body.light-theme .tab:hover { background: #eee; color: #333; }
         body.light-theme .tab.active { background: #f5f5f5; color: #222; box-shadow: inset 0 -2px 0 #007acc; }
-        body.light-theme .output-panel { background: #fafafa; border-color: #ddd; }
-        body.light-theme .output-header { background: #e8e8e8; color: #888; }
-        body.light-theme .output-content { color: #333; }
-        body.light-theme .output-content .output-stdout { color: #333; }
-        body.light-theme .output-content .output-stderr { color: #c62828; }
-        body.light-theme .output-content .output-error { color: #d32f2f; }
-        body.light-theme .output-content .output-info { color: #2e7d32; }
-        body.light-theme .output-content .output-warn { color: #f9a825; }
+        body.light-theme .bottom-panel { background: #fafafa; border-color: #ddd; }
+        body.light-theme .panel-tabs { background: #e8e8e8; }
+        body.light-theme .panel-tab { color: #888; }
+        body.light-theme .panel-tab:hover { color: #555; }
+        body.light-theme .panel-tab.active { color: #222; border-bottom-color: #007acc; }
+        body.light-theme .panel-output { color: #333; }
+        body.light-theme .panel-output .output-stdout { color: #333; }
+        body.light-theme .panel-output .output-stderr { color: #c62828; }
+        body.light-theme .panel-output .output-error { color: #d32f2f; }
+        body.light-theme .panel-output .output-info { color: #2e7d32; }
+        body.light-theme .panel-output .output-warn { color: #f9a825; }
+        body.light-theme .panel-resize-handle::after { background: rgba(0,0,0,0.12); }
+        body.light-theme .panel-resize-handle:hover::after { background: #007acc; }
         body.light-theme .status-bar { background: #007acc; }
         body.light-theme .modal-content { background: #fff; }
         body.light-theme .modal-content h3 { color: #333; }
         body.light-theme .modal-content input { background: #f5f5f5; border-color: #ccc; color: #333; }
         body.light-theme .modal-btn.secondary { background: rgba(0,0,0,0.06); color: #555; }
         body.light-theme .modal-btn.secondary:hover { background: rgba(0,0,0,0.1); }
+        body.light-theme .modal.cloud-save {
+            background:
+                radial-gradient(ellipse 300px 200px at 80% 8%, rgba(255,180,80,0.15) 0%, transparent 100%),
+                linear-gradient(165deg, #93c5e0 0%, #b8d8f0 30%, #d4e8f5 60%, #edf6fa 100%);
+        }
+        body.light-theme .modal.cloud-save::before { background: rgba(255,255,255,0.3); box-shadow: 50px -18px 0 8px rgba(255,255,255,0.25),110px -28px 0 0 rgba(255,255,255,0.3),150px 5px 0 -8px rgba(255,255,255,0.2),-35px -8px 0 5px rgba(255,255,255,0.2); }
+        body.light-theme .modal.cloud-save::after { background: rgba(255,255,255,0.25); box-shadow: 35px -14px 0 6px rgba(255,255,255,0.2),80px -22px 0 0 rgba(255,255,255,0.25),-20px 0 0 3px rgba(255,255,255,0.18); }
         body.light-theme .cloud-badge { background: rgba(255,167,38,0.15); color: #e65100; }
+
+        /* ===== ENCRYPT-SAVE MODAL BACKGROUND ===== */
+        .modal.encrypt-save {
+            background: rgba(10,5,20,0.85);
+            backdrop-filter: none;
+        }
+        .modal.encrypt-save .modal-content {
+            border-color: rgba(0,255,136,0.2);
+        }
+        body.light-theme .modal.encrypt-save {
+            background: rgba(240,235,250,0.85);
+        }
 
     
     </style>
@@ -299,21 +491,26 @@
 
     <div class="toolbar-group">
         <button id="runBtn" class="toolbar-btn run-btn" title="Run in-process (Ctrl+Enter)">▶️ Run</button>
-        <button id="runTerminalBtn" class="toolbar-btn" title="Run in terminal (live output)" style="color:#4fc3f7">🖥️ Run in Terminal</button>
-        <button id="sendToTerminalBtn" class="toolbar-btn" title="Send code to terminal (does not execute)">📤 Send to Terminal</button>
         <button id="previewBtn" class="toolbar-btn preview-btn" title="Preview HTML" style="display:none">👁️ Preview</button>
         <button id="stopBtn" class="toolbar-btn stop-btn" title="Stop execution" style="display:none">⏹ Stop</button>
     </div>
 
     <div class="toolbar-group">
         <button id="saveEncryptedBtn" class="toolbar-btn encrypt-btn">🔒 Encrypt</button>
+        <button id="openEncryptedBtn" class="toolbar-btn encrypt-btn">🔓 Decrypt</button>
         <button id="saveCloudBtn" class="toolbar-btn cloud-btn">☁️ Cloud</button>
         <button id="restoreCloudBtn" class="toolbar-btn cloud-btn">📥 Restore</button>
         <button id="refreshCloudBtn" class="toolbar-btn">🔄</button>
     </div>
 
     <div class="toolbar-group">
+        <button id="togglePanelBtn" class="toolbar-btn" title="Toggle terminal / output panel">🖥️ Terminal</button>
         <button id="devtoolsBtn" class="toolbar-btn">🔧 DevTools</button>
+    </div>
+
+    <div class="toolbar-group">
+        <button id="premiumBtn" class="toolbar-btn" style="color:#ffd700" title="Get NobleHyve Premium">⭐ Premium</button>
+        <button id="defaultBrowserBtn" class="toolbar-btn" style="color:#4fc3f7;font-size:11px" title="Set NobleHyve as your default browser">🌐 Set Default</button>
     </div>
 
     <div class="lang-wrap">
@@ -351,29 +548,38 @@
     </div>
     
     <span class="cloud-badge" id="cloudFileCount">☁️ 0</span>
-    <span id="usageBadge" class="cloud-badge" style="background:rgba(76,175,80,0.15);color:#4caf50;font-size:10px">☁️ 5 left · 🔒 5 left</span>
+    <span id="usageBadge" class="cloud-badge" style="background:rgba(76,175,80,0.15);color:#4caf50;font-size:10px">☁️ 0 MB / 100 MB</span>
 </div>
 
 <div class="tabs-container" id="tabsContainer">
     <button class="new-tab-btn" id="newTabBtn">+</button>
 </div>
 
-<!-- ===== EDITOR + OUTPUT LAYOUT ===== -->
+<!-- ===== EDITOR + BOTTOM PANEL LAYOUT ===== -->
 <div class="editor-panel-container">
     <div class="editor-container">
         <textarea id="editor">// Welcome to NobleHyve Editor! ...</textarea>
-       
+    </div>
 
-    <!-- Output Panel -->
-    <div id="outputPanel" class="output-panel" style="display: none;">
-        <div class="output-header">
-            <span id="outputTitle">▷ Output</span>
-            <div class="output-actions">
-                <button id="clearOutputBtn" class="output-action-btn" title="Clear">🗑️ Clear</button>
-                <button id="closeOutputBtn" class="output-action-btn" title="Close">✕</button>
+    <!-- Resize handle (between editor and bottom panel) -->
+    <div class="panel-resize-handle" id="panelResizeHandle"></div>
+
+    <!-- Bottom Panel (Terminal + Output) -->
+    <div id="bottomPanel" class="bottom-panel">
+        <div class="panel-tabs">
+            <span class="panel-tab active" data-tab="terminal">🖥️ Terminal</span>
+            <span class="panel-tab" data-tab="output">📋 Output</span>
+            <div class="panel-actions">
+                <button id="clearOutputBtn" class="panel-action-btn" title="Clear output">🗑️</button>
+                <button id="closePanelBtn" class="panel-action-btn" title="Close panel">✕</button>
             </div>
         </div>
-        <div id="outputContent" class="output-content"></div>
+        <div class="panel-body">
+            <div class="tab-content active" id="terminalContainer"></div>
+            <div class="tab-content" id="outputContainer">
+                <div class="panel-output" id="outputContent"></div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -393,6 +599,7 @@
     </div>
     <div class="status-right">
         <span id="fileInfo" class="status-item">📄 Untitled.js</span>
+        <span id="statusTerminalBtn" class="status-item" style="cursor:pointer;opacity:0.8" title="Toggle terminal">🖥️</span>
     </div>
 </div>
 
@@ -402,7 +609,7 @@
 <div id="inputModal" class="modal">
     <div class="modal-content">
         <h3 id="modalTitle">Enter Value</h3>
-        <input type="text" id="modalInput" placeholder="">
+        <input type="text" id="modalInput" placeholder="" autofocus>
         <div class="modal-buttons">
             <button id="modalCancelBtn" class="modal-btn secondary">Cancel</button>
             <button id="modalOkBtn" class="modal-btn primary">OK</button>
@@ -413,10 +620,34 @@
 <div id="passwordModal" class="modal">
     <div class="modal-content">
         <h3 id="passwordModalTitle">Enter Password</h3>
-        <input type="password" id="passwordModalInput" placeholder="">
+        <input type="password" id="passwordModalInput" placeholder="" autofocus>
         <div class="modal-buttons">
             <button id="passwordModalCancelBtn" class="modal-btn secondary">Cancel</button>
             <button id="passwordModalOkBtn" class="modal-btn primary">OK</button>
+        </div>
+    </div>
+</div>
+
+<div id="cloudFilePicker" class="modal">
+    <div class="modal-content file-picker">
+        <h3 style="margin-bottom:8px">☁️ Select Cloud File</h3>
+        <input type="text" id="filePickerSearch" class="file-picker-search" placeholder="Filter files..." autocomplete="off">
+        <div id="filePickerList" class="file-picker-list"></div>
+        <div id="filePickerCount" class="file-picker-count"></div>
+        <div class="modal-buttons" style="margin-top:12px">
+            <button id="filePickerCancelBtn" class="modal-btn secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<div id="encryptedFilePicker" class="modal">
+    <div class="modal-content file-picker encrypt-picker">
+        <h3 style="margin-bottom:8px">🔓 Select Encrypted File</h3>
+        <input type="text" id="encFilePickerSearch" class="file-picker-search" placeholder="Filter .enc files..." autocomplete="off">
+        <div id="encFilePickerList" class="file-picker-list"></div>
+        <div id="encFilePickerCount" class="file-picker-count"></div>
+        <div class="modal-buttons" style="margin-top:12px">
+            <button id="encFilePickerCancelBtn" class="modal-btn secondary">Cancel</button>
         </div>
     </div>
 </div>
@@ -453,6 +684,8 @@
 <script src="node_modules/codemirror/addon/fold/foldcode.js"></script>
 <script src="node_modules/codemirror/addon/fold/foldgutter.js"></script>
 <script src="node_modules/codemirror/addon/fold/brace-fold.js"></script>
+<script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+<script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 
 <script>
     let editor = null;
@@ -464,6 +697,15 @@
     let executionInProgress = false;
     let outputVisible = false;
     let usageStatus = null;
+    const windowStart = Date.now();
+
+    const pipeline = window.editorAPI.sendPipelineEvent ? {
+        send: (topic, data) => window.editorAPI.sendPipelineEvent(topic, data).catch(() => {}),
+        perf: (action, detail, startTime) => {
+            const elapsed = Date.now() - startTime;
+            window.editorAPI.sendPipelineEvent('editor', { action, detail, elapsedMs: elapsed, timestamp: new Date().toISOString() }).catch(() => {});
+        }
+    } : { send: () => {}, perf: () => {} };
     
     class EditorTab {
         constructor(id, filename, content, language) {
@@ -495,12 +737,15 @@
             titleEl.textContent = title;
             input.value = defaultValue;
             modal.style.display = 'flex';
-            input.focus();
+            const doFocus = () => { input.focus(); input.select(); };
+            doFocus();
+            setTimeout(doFocus, 50);
             const onOk = () => { modal.style.display = 'none'; resolve(input.value); };
             const onCancel = () => { modal.style.display = 'none'; resolve(null); };
             okBtn.onclick = onOk;
             cancelBtn.onclick = onCancel;
-            input.onkeypress = (e) => { if (e.key === 'Enter') onOk(); };
+            input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); onOk(); } };
+            modal.onmousedown = (e) => { if (e.target === modal) onCancel(); };
         });
     }
     
@@ -514,13 +759,128 @@
             titleEl.textContent = title;
             input.value = '';
             modal.style.display = 'flex';
-            input.focus();
+            const doFocus = () => { input.focus(); input.select(); };
+            doFocus();
+            setTimeout(doFocus, 50);
             const onOk = () => { modal.style.display = 'none'; resolve(input.value); };
             const onCancel = () => { modal.style.display = 'none'; resolve(null); };
             okBtn.onclick = onOk;
             cancelBtn.onclick = onCancel;
-            input.onkeypress = (e) => { if (e.key === 'Enter') onOk(); };
+            input.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); onOk(); } };
+            modal.onmousedown = (e) => { if (e.target === modal) onCancel(); };
         });
+    }
+    
+    function showCloudFilePicker(files) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('cloudFilePicker');
+            const list = document.getElementById('filePickerList');
+            const search = document.getElementById('filePickerSearch');
+            const count = document.getElementById('filePickerCount');
+            const cancelBtn = document.getElementById('filePickerCancelBtn');
+            function render(filter) {
+                const filtered = filter
+                    ? files.filter(f => f.name.toLowerCase().includes(filter.toLowerCase()))
+                    : files;
+                list.innerHTML = '';
+                filtered.forEach(f => {
+                    const ext = f.name.split('.').pop().toLowerCase();
+                    const icons = { js:'🟨', ts:'🟦', py:'🐍', html:'🌐', css:'🎨', json:'📋', md:'📝', txt:'📄', java:'☕', go:'🔷', rs:'🦀', php:'🐘', rb:'💎', sql:'🗄️', xml:'📰', yaml:'📋', sh:'⚡', ps1:'⚡', dockerfile:'🐳', default:'📄' };
+                    const icon = icons[ext] || icons.default;
+                    const item = document.createElement('div');
+                    item.className = 'file-picker-item';
+                    item.innerHTML = `<span class="file-icon">${icon}</span><span class="file-name">${f.name}</span>`;
+                    item.onclick = () => { modal.style.display = 'none'; resolve(f.name); };
+                    list.appendChild(item);
+                });
+                count.textContent = filtered.length === files.length
+                    ? `${files.length} file${files.length !== 1 ? 's' : ''}`
+                    : `${filtered.length} of ${files.length} files`;
+            }
+            search.value = '';
+            modal.style.display = 'flex';
+            render('');
+            search.focus();
+            search.oninput = () => render(search.value);
+            search.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    const first = list.querySelector('.file-picker-item');
+                    if (first) first.click();
+                }
+            };
+            cancelBtn.onclick = () => { modal.style.display = 'none'; resolve(null); };
+        });
+    }
+    
+    function showEncryptedFilePicker(files) {
+        return new Promise((resolve) => {
+            const modal = document.getElementById('encryptedFilePicker');
+            const list = document.getElementById('encFilePickerList');
+            const search = document.getElementById('encFilePickerSearch');
+            const count = document.getElementById('encFilePickerCount');
+            const cancelBtn = document.getElementById('encFilePickerCancelBtn');
+            function render(filter) {
+                const filtered = filter
+                    ? files.filter(f => f.name.toLowerCase().includes(filter.toLowerCase()))
+                    : files;
+                list.innerHTML = '';
+                filtered.forEach(f => {
+                    const item = document.createElement('div');
+                    item.className = 'file-picker-item';
+                    item.innerHTML = `<span class="file-icon">🔒</span><span class="file-name">${f.name}</span>`;
+                    item.onclick = () => { modal.style.display = 'none'; resolve(f); };
+                    list.appendChild(item);
+                });
+                count.textContent = filtered.length === files.length
+                    ? `${files.length} file${files.length !== 1 ? 's' : ''}`
+                    : `${filtered.length} of ${files.length} files`;
+            }
+            search.value = '';
+            modal.style.display = 'flex';
+            render('');
+            search.focus();
+            search.oninput = () => render(search.value);
+            search.onkeydown = (e) => {
+                if (e.key === 'Enter') {
+                    const first = list.querySelector('.file-picker-item');
+                    if (first) first.click();
+                }
+            };
+            cancelBtn.onclick = () => { modal.style.display = 'none'; resolve(null); };
+        });
+    }
+    
+    async function openEncryptedFile() {
+        const start = Date.now();
+        const pickerModal = document.getElementById('encryptedFilePicker');
+        const pwModal = document.getElementById('passwordModal');
+        pickerModal.classList.add('encrypt-save');
+        const r = await window.editorAPI.listEncryptedFiles();
+        pickerModal.classList.remove('encrypt-save');
+        if (!r.success || !r.files || r.files.length === 0) {
+            showToast('No encrypted (.enc) files found on desktop', 'info');
+            return;
+        }
+        const file = await showEncryptedFilePicker(r.files);
+        if (!file) return;
+        pwModal.classList.add('encrypt-save');
+        const pw = await showPasswordModal(`Enter password for "${file.name}":`);
+        pwModal.classList.remove('encrypt-save');
+        if (!pw) return;
+        showToast('Decrypting...', 'info');
+        try {
+            const dec = await window.editorAPI.readEncryptedFile(file.path, pw);
+            if (dec.success) {
+                const filename = file.name.replace(/\.enc$/i, '') || file.name;
+                pipeline.perf('decrypt-open', filename, start);
+                createNewTab(filename, dec.content);
+                showToast(`✅ Decrypted: ${file.name}`, 'success');
+            } else {
+                showToast('Decryption failed: ' + (dec.error || 'Wrong password'), 'error');
+            }
+        } catch (e) {
+            showToast('Failed to open encrypted file: ' + e.message, 'error');
+        }
     }
     
     function getDefaultContent(filename) {
@@ -796,10 +1156,11 @@ async function renameTab(id) {
     }
     
     async function saveCurrentFileForTab(tab) {
+        const start = Date.now();
         tab.content = editor.getValue();
         if (tab.filePath) {
             const r = await window.editorAPI.writeFile(tab.filePath, tab.content);
-            if (r.success) { tab.isModified = false; showToast(`✅ Saved: ${tab.filename}`, 'success'); }
+            if (r.success) { tab.isModified = false; showToast(`✅ Saved: ${tab.filename}`, 'success'); pipeline.perf('save', tab.filename, start); }
         } else {
             const r = await window.editorAPI.showSaveDialog({ defaultPath: tab.filename });
             if (!r.canceled) {
@@ -809,6 +1170,7 @@ async function renameTab(id) {
                     tab.isModified = false;
                     tab.filename = r.filePath.split(/[/\\]/).pop();
                     showToast(`✅ Saved: ${tab.filename}`, 'success');
+                    pipeline.perf('save-as', tab.filename, start);
                     updateTabsUI();
                 }
             }
@@ -826,6 +1188,7 @@ async function renameTab(id) {
     }
     
 async function openFile() {
+    const start = Date.now();
     const r = await window.editorAPI.showOpenDialog();
     if (r.canceled) return;
 
@@ -841,6 +1204,7 @@ async function openFile() {
             t.filePath = filePath;
             t.isEncrypted = filename.endsWith('.enc');
             t.isModified = false;
+            pipeline.perf('open', filename, start);
             showToast(`📂 Opened: ${filename}`, 'success');
             const dir = getFileDirSimple(t);
             if (dir) { await window.editorAPI.setWorkspace(dir); updateWorkspaceDisplay(); }
@@ -853,24 +1217,27 @@ async function openFile() {
 }
     
     async function saveEncryptedToFile() {
+        const start = Date.now();
         const t = tabs.find(t => t.id === activeTabId);
         if (!t) return;
         t.content = editor.getValue();
-        if (!usageStatus) await loadUsageStatus();
-        if (!usageStatus.isPremium && usageStatus.localEncrypts.remaining <= 0) {
-            showToast('Free limit reached (5 local encrypts). Get Premium for unlimited use.', 'error');
-            return;
-        }
-        const fn = await showInputModal('Save encrypted file:', t.filename.replace(/\.enc$/, '') + '.enc');
+        const inputModal = document.getElementById('inputModal');
+        const pwModal = document.getElementById('passwordModal');
+        inputModal.classList.add('encrypt-save');
+        const fn = await showInputModal('🔒 Save encrypted file:', t.filename.replace(/\.enc$/, '') + '.enc');
+        inputModal.classList.remove('encrypt-save');
         if (!fn) return;
         const finalFile = fn.endsWith('.enc') ? fn : fn + '.enc';
+        pwModal.classList.add('encrypt-save');
         const pw = await showPasswordModal('Enter encryption password:');
-        if (!pw) return;
+        if (!pw) { pwModal.classList.remove('encrypt-save'); return; }
         const pw2 = await showPasswordModal('Confirm password:');
+        pwModal.classList.remove('encrypt-save');
         if (pw !== pw2) { showToast('Passwords do not match!', 'error'); return; }
         const r = await window.editorAPI.saveEncryptedFile(finalFile, t.content, pw);
         if (r.success) {
             t.filePath = r.path; t.isEncrypted = true; t.isModified = false; t.filename = finalFile;
+            pipeline.perf('encrypt-save', finalFile, start);
             showToast(`✅ Encrypted: ${finalFile}`, 'success');
             updateTabsUI();
             await loadUsageStatus();
@@ -884,7 +1251,8 @@ async function openFile() {
             const r = await window.editorAPI.listCloudFiles();
             if (r.success && r.files) {
                 cloudFiles = r.files.map(n => ({ name: n }));
-                document.getElementById('cloudFileCount').textContent = `☁️ ${cloudFiles.length}`;
+                const tierIcon = usageStatus?.isPremium ? '⭐' : '☁️';
+                document.getElementById('cloudFileCount').textContent = `${tierIcon} ${cloudFiles.length} files`;
             } else {
                 const errMsg = r.error || JSON.stringify(r);
                 showToast('Cloud list error: ' + errMsg, 'error');
@@ -904,59 +1272,67 @@ async function openFile() {
     function updateUsageUI() {
         const badge = document.getElementById('usageBadge');
         if (!badge) return;
-        if (usageStatus && !usageStatus.isPremium) {
-            badge.textContent = `☁️ ${usageStatus.cloudSaves.remaining} left · 🔒 ${usageStatus.localEncrypts.remaining} left · 5MB max`;
+        if (!usageStatus) return;
+        const usedMB = (usageStatus.cloudBytesUsed / (1024 * 1024)).toFixed(1);
+        const maxMB = Math.round(usageStatus.cloudMaxBytes / (1024 * 1024));
+        const fileCount = usageStatus.cloudFileCount || 0;
+        if (!usageStatus.isPremium) {
+            badge.textContent = `☁️ ${fileCount} files · ${usedMB} MB / ${maxMB} MB`;
             badge.style.background = 'rgba(255,152,0,0.15)';
             badge.style.color = '#ff9800';
-        } else if (usageStatus && usageStatus.isPremium) {
-            badge.textContent = '⭐ Premium unlimited';
+        } else {
+            badge.textContent = `⭐ Premium · ${fileCount} files · ${usedMB} MB / ${maxMB} MB`;
             badge.style.background = 'rgba(76,175,80,0.15)';
             badge.style.color = '#4caf50';
         }
     }
     
     async function uploadToCloud() {
+        const start = Date.now();
         const t = tabs.find(t => t.id === activeTabId);
         if (!t) return;
         t.content = editor.getValue();
         if (!usageStatus) await loadUsageStatus();
-        if (!usageStatus.isPremium && usageStatus.cloudSaves.remaining <= 0) {
-            showToast('Free limit reached (5 cloud saves). Get Premium for unlimited use.', 'error');
-            return;
-        }
-        const contentBytes = new TextEncoder().encode(t.content).length;
-        if (!usageStatus.isPremium && contentBytes > 5 * 1024 * 1024) {
-            showToast('Free limit: file too large (max 5MB). Upgrade to Premium.', 'error');
-            return;
-        }
+        const inputModal = document.getElementById('inputModal');
+        const pwModal = document.getElementById('passwordModal');
+        inputModal.classList.add('cloud-save');
         const fn = await showInputModal('Enter filename:', t.filename);
+        inputModal.classList.remove('cloud-save');
         if (!fn) return;
+        pwModal.classList.add('cloud-save');
         const pw = await showPasswordModal('Enter encryption password:');
-        if (!pw) return;
+        if (!pw) { pwModal.classList.remove('cloud-save'); return; }
         const pw2 = await showPasswordModal('Confirm password:');
+        pwModal.classList.remove('cloud-save');
         if (pw !== pw2) { showToast('Passwords do not match!', 'error'); return; }
         showToast('Encrypting and uploading...', 'info');
         try {
             const enc = await window.editorAPI.encryptContent(t.content, pw);
             const r = await window.editorAPI.uploadToCloud(fn, enc);
-            if (r.success) { showToast(`✅ Saved "${fn}" to cloud!`, 'success'); await loadCloudFiles(); await loadUsageStatus(); }
+            if (r.success) { pipeline.perf('cloud-upload', fn, start); showToast(`✅ Saved "${fn}" to cloud!`, 'success'); await loadCloudFiles(); await loadUsageStatus(); }
             else { showToast('Upload failed: ' + r.error, 'error'); }
         } catch (e) { showToast('Upload failed: ' + e.message, 'error'); }
     }
     
     async function restoreFromCloud() {
+        const start = Date.now();
         if (cloudFiles.length === 0) await loadCloudFiles();
         if (cloudFiles.length === 0) { showToast('No files in cloud', 'info'); return; }
-        const list = cloudFiles.map((f, i) => `${i+1}. ${f.name}`).join('\n');
-        const fn = await showInputModal(`Select file:\n${list}\n\nEnter filename:`);
+        const pickerModal = document.getElementById('cloudFilePicker');
+        const pwModal = document.getElementById('passwordModal');
+        pickerModal.classList.add('cloud-save');
+        const fn = await showCloudFilePicker(cloudFiles);
+        pickerModal.classList.remove('cloud-save');
         if (!fn) return;
+        pwModal.classList.add('cloud-save');
         const pw = await showPasswordModal(`Enter password for "${fn}":`);
+        pwModal.classList.remove('cloud-save');
         if (!pw) return;
         showToast('Downloading...', 'info');
         try {
             const r = await window.editorAPI.downloadFromCloud(fn);
             const dec = await window.editorAPI.decryptContent(r.content, pw);
-            if (dec) { createNewTab(fn, dec); showToast(`✅ Restored "${fn}"!`, 'success'); }
+            if (dec) { pipeline.perf('cloud-download', fn, start); createNewTab(fn, dec); showToast(`✅ Restored "${fn}"!`, 'success'); }
             else { showToast('Wrong password!', 'error'); }
         } catch (e) { showToast('Restore failed: ' + e.message, 'error'); }
     }
@@ -967,13 +1343,24 @@ async function openFile() {
     
     // ============ OUTPUT PANEL ============
     function showOutput() {
-        const panel = document.getElementById('outputPanel');
-        if (panel) { panel.style.display = 'flex'; outputVisible = true; }
+        const panel = document.getElementById('bottomPanel');
+        if (!panel) return;
+        const toggleBtn = document.getElementById('togglePanelBtn');
+        const handle = document.getElementById('panelResizeHandle');
+        panel.classList.add('open'); outputVisible = true;
+        if (toggleBtn) toggleBtn.classList.add('active');
+        if (handle) handle.style.display = 'flex';
+        switchTab('output');
     }
     
     function hideOutput() {
-        const panel = document.getElementById('outputPanel');
-        if (panel) { panel.style.display = 'none'; outputVisible = false; }
+        const panel = document.getElementById('bottomPanel');
+        if (!panel) return;
+        const toggleBtn = document.getElementById('togglePanelBtn');
+        const handle = document.getElementById('panelResizeHandle');
+        panel.classList.remove('open'); outputVisible = false;
+        if (toggleBtn) toggleBtn.classList.remove('active');
+        if (handle) handle.style.display = 'none';
     }
     
     function clearOutput() {
@@ -992,6 +1379,11 @@ async function openFile() {
             content.scrollTop = content.scrollHeight;
         }
     }
+
+    function switchTab(name) {
+        document.querySelectorAll('.panel-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+        document.querySelectorAll('.panel-body > .tab-content').forEach(t => t.classList.toggle('active', t.id === name + 'Container'));
+    }
     
     // ============ RUN / EXECUTION ============
     function getActiveCode() {
@@ -1006,6 +1398,7 @@ async function openFile() {
         const tab = getActiveCode();
         if (!tab) return;
         
+        const start = Date.now();
         clearOutput();
         appendOutput(`▶ Running ${tab.filename} (${tab.language})...`, 'output-info');
         
@@ -1031,6 +1424,7 @@ async function openFile() {
             appendOutput(`Error: ${err.message || err}`, 'output-error');
         }
         
+        pipeline.perf('run-code', `${tab.filename} (${lang})`, start);
         executionInProgress = false;
         document.getElementById('runBtn').disabled = false;
         document.getElementById('stopBtn').style.display = 'none';
@@ -1126,26 +1520,84 @@ async function openFile() {
         return dir;
     }
     
-    async function sendCodeToTerminal(runInsteadOfSend) {
-        const tab = getActiveCode();
-        if (!tab) return;
-        const code = tab.content;
-        const dir = getFileDirSimple(tab);
-        if (dir) await window.editorAPI.setWorkspace(dir);
+    // ============ EMBEDDED TERMINAL ============
+    let terminalSessionId = 'editor-terminal';
+    let xterm = null;
+    let fitAddon = null;
+    let termCleanup = null;
+    let terminalStarted = false;
+
+    async function startTerminal() {
+        if (terminalStarted) return;
+        terminalStarted = true;
+        const container = document.getElementById('terminalContainer');
+        if (!container) return;
         
-        if (runInsteadOfSend) {
-            // Send with cd + execute, then newline to trigger run
-            await window.editorAPI.sendToTerminal(code, dir);
-            appendOutput(`🖥️ Sent to terminal (${tab.filename})`, 'output-info');
-        } else {
-            // Just send the code text, don't execute
-            await window.editorAPI.sendToTerminal('', dir);  // just cd
-            await window.editorAPI.sendToTerminal(code, null);
-            appendOutput(`📤 Code sent to terminal`, 'output-info');
+        xterm = new Terminal({
+            cursorBlink: true, fontSize: 13,
+            fontFamily: "'Cascadia Code', 'Consolas', 'Monaco', monospace",
+            theme: { background: '#1e1e1e', foreground: '#d4d4d4', cursor: '#ffffff',
+                black: '#0c0c0c', red: '#f48771', green: '#6a9955', yellow: '#ffaa44',
+                blue: '#569cd6', magenta: '#c586c0', cyan: '#4ec9b0', white: '#d4d4d4' },
+            scrollback: 5000, convertEol: true,
+        });
+        fitAddon = new FitAddon.FitAddon();
+        xterm.loadAddon(fitAddon);
+        xterm.open(container);
+        fitAddon.fit();
+
+        let fitTimer;
+        new ResizeObserver(() => {
+            clearTimeout(fitTimer);
+            fitTimer = setTimeout(() => { try { fitAddon.fit(); } catch(e) {} }, 100);
+        }).observe(container);
+
+        let resizeTimer;
+        xterm.onResize(({ cols, rows }) => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (window.editorAPI.resizeTerminal) {
+                    window.editorAPI.resizeTerminal(terminalSessionId, cols, rows);
+                }
+            }, 150);
+        });
+
+        if (window.editorAPI.onTerminalData) {
+            const cleanup = window.editorAPI.onTerminalData((data) => {
+                if (data && data.id === terminalSessionId) {
+                    xterm.write(data.data ?? data);
+                }
+            });
+            termCleanup = cleanup;
         }
-        showToast('Sent to terminal', 'success');
+
+        if (window.editorAPI.onTerminalExit) {
+            window.editorAPI.onTerminalExit(({ id, exitCode }) => {
+                if (id === terminalSessionId) {
+                    xterm.write(`\r\n[Session ended — exit code ${exitCode}]\r\n`);
+                }
+            });
+        }
+
+        xterm.onData((data) => {
+            if (window.editorAPI.writeToTerminal) {
+                window.editorAPI.writeToTerminal(terminalSessionId, data);
+            }
+        });
+
+        try {
+            const { cols, rows } = xterm;
+            const result = await window.editorAPI.createTerminalSession(terminalSessionId, null, null, cols, rows);
+            if (result && result.success) {
+                xterm.write('\x1b[32m✓ Terminal Ready\x1b[0m\r\n');
+            } else {
+                xterm.write('\x1b[31mFailed to start terminal session\x1b[0m\r\n');
+            }
+        } catch (err) {
+            xterm.write(`\x1b[31mError: ${err.message}\x1b[0m\r\n`);
+        }
     }
-    
+
     // ============ INIT ============
     document.addEventListener('DOMContentLoaded', async () => {
         const textarea = document.getElementById('editor');
@@ -1183,10 +1635,26 @@ async function openFile() {
         document.getElementById('saveBtn')?.addEventListener('click', saveCurrentFile);
         document.getElementById('openBtn')?.addEventListener('click', openFile);
         document.getElementById('saveEncryptedBtn')?.addEventListener('click', saveEncryptedToFile);
+        document.getElementById('openEncryptedBtn')?.addEventListener('click', openEncryptedFile);
         document.getElementById('saveCloudBtn')?.addEventListener('click', uploadToCloud);
         document.getElementById('restoreCloudBtn')?.addEventListener('click', restoreFromCloud);
         document.getElementById('refreshCloudBtn')?.addEventListener('click', loadCloudFiles);
         document.getElementById('devtoolsBtn')?.addEventListener('click', toggleDevTools);
+        document.getElementById('premiumBtn')?.addEventListener('click', () => {
+            if (window.editorAPI?.openPremiumPage) {
+                window.editorAPI.openPremiumPage();
+            }
+        });
+        document.getElementById('defaultBrowserBtn')?.addEventListener('click', async () => {
+            if (window.editorAPI?.setAsDefaultBrowser) {
+                const result = await window.editorAPI.setAsDefaultBrowser();
+                if (result.success) {
+                    showToast('✅ NobleHyve is now your default browser', 'success');
+                } else {
+                    showToast('Failed to set as default: ' + (result.error || 'unknown error'), 'error');
+                }
+            }
+        });
         
         // Run / Preview buttons
         document.getElementById('runBtn')?.addEventListener('click', runCode);
@@ -1201,13 +1669,42 @@ async function openFile() {
             appendOutput('Execution stopped by user', 'output-warn');
         });
         
-        // Terminal integration buttons
-        document.getElementById('runTerminalBtn')?.addEventListener('click', () => sendCodeToTerminal(true));
-        document.getElementById('sendToTerminalBtn')?.addEventListener('click', () => sendCodeToTerminal(false));
+        // Bottom panel: tab switching
+        document.querySelectorAll('.panel-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                togglePanel(true);
+                switchTab(tab.dataset.tab);
+                if (tab.dataset.tab === 'terminal') startTerminal();
+            });
+        });
         
-        // Output panel buttons
+        // Bottom panel: close
+        document.getElementById('closePanelBtn')?.addEventListener('click', () => togglePanel(false));
+        
+        // Bottom panel: toggle panel button (toolbar)
+        const toggleBtn = document.getElementById('togglePanelBtn');
+        function togglePanel(open) {
+            const panel = document.getElementById('bottomPanel');
+            if (!panel) return;
+            const handle = document.getElementById('panelResizeHandle');
+            if (open === undefined) open = !panel.classList.contains('open');
+            panel.classList.toggle('open', open);
+            if (toggleBtn) toggleBtn.classList.toggle('active', open);
+            if (open) {
+                if (handle) handle.style.display = 'flex';
+                switchTab('terminal');
+                startTerminal();
+            } else {
+                if (handle) handle.style.display = 'none';
+            }
+        }
+        toggleBtn?.addEventListener('click', () => togglePanel());
+        
+        // Bottom panel: status bar terminal button
+        document.getElementById('statusTerminalBtn')?.addEventListener('click', () => togglePanel());
+        
+        // Output buttons
         document.getElementById('clearOutputBtn')?.addEventListener('click', clearOutput);
-        document.getElementById('closeOutputBtn')?.addEventListener('click', hideOutput);
         
         // Preview close
         document.getElementById('closePreviewBtn')?.addEventListener('click', closePreview);
@@ -1228,8 +1725,40 @@ async function openFile() {
         createNewTab();
         await updateWorkspaceDisplay();
         
+        // Panel resize handle setup
+        (function() {
+            const handle = document.getElementById('panelResizeHandle');
+            const panel = document.getElementById('bottomPanel');
+            if (!handle || !panel) return;
+            let active = false;
+            let startY, startH;
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                active = true;
+                startY = e.clientY;
+                startH = panel.offsetHeight;
+                handle.classList.add('active');
+                document.body.style.cursor = 'ns-resize';
+                document.body.style.userSelect = 'none';
+            });
+            document.addEventListener('mousemove', (e) => {
+                if (!active) return;
+                const delta = startY - e.clientY;
+                const newH = Math.max(80, Math.min(startH + delta, window.innerHeight - 100));
+                panel.style.height = newH + 'px';
+            });
+            document.addEventListener('mouseup', () => {
+                if (!active) return;
+                active = false;
+                handle.classList.remove('active');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            });
+        })();
+        
+        pipeline.send('editor', { action: 'editor-ready', loadTimeMs: Date.now() - windowStart });
         console.log('Editor ready!');
-        showToast('✨ Editor ready! Ctrl+Enter to run code. 🖥️ Run in Terminal for live output.', 'success');
+        showToast('✨ Editor ready! Ctrl+Enter to run code.', 'success');
     });
 </script>
 </body>

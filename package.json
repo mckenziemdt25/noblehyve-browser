@@ -1,31 +1,106 @@
 {
-  "name": "noblehyve-browser",
-  "version": "1.0.0",
-  "description": "Secure browser with encrypted code editor and cloud storage",
-  "main": "main.js",
-  "scripts": {
-    "start": "electron .",
-    "dev": "electron . --debug"
-  },
-  "keywords": [
-    "browser",
-    "security",
-    "encryption",
-    "code-editor",
-    "cloud-storage"
-  ],
-  "author": "NobleHyve",
-  "license": "MIT",
-  "devDependencies": {
-    "electron": "^42.2.0"
-  },
-  "dependencies": {
-    "@aws-sdk/client-s3": "^3.1063.0",
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/addon-web-links": "^0.11.0",
-    "@xterm/xterm": "^5.5.0",
-    "codemirror": "^5.65.16",
-    "crypto-js": "^4.2.0",
-    "node-pty": "^1.1.0"
-  }
+    "name":  "noblehyve-browser",
+    "version":  "1.0.0",
+    "description":  "Secure browser with encrypted code editor and cloud storage",
+    "main":  "main.js",
+    "scripts":  {
+                    "start":  "electron .",
+                    "dev":  "electron . --debug",
+                    "pipeline":  "node pipeline-server.js",
+                    "start-with-pipeline":  "electron . --pipeline-server",
+                    "dist":  "electron-builder",
+                    "dist:win":  "electron-builder --win",
+                    "dist:store":  "electron-builder --win appx",
+                    "dist:linux":  "electron-builder --linux"
+                },
+    "keywords":  [
+                     "browser",
+                     "security",
+                     "encryption",
+                     "code-editor",
+                     "cloud-storage"
+                 ],
+    "author":  "NobleHyve \u003csupport@noblehyve.com\u003e",
+    "license":  "MIT",
+    "build":  {
+                  "appId":  "com.noblehyve.browser",
+"productName": "Noblehyve",
+                  "directories":  {
+                                      "output":  "dist"
+                                  },
+                  "files":  [
+                                "!app - Copy.js",
+                                "!tools/**/*",
+                                "!test_data/**/*",
+                                "!test_encrypted_data/**/*",
+                                "!docs/**/*",
+                                "!test-*.js",
+                                "!SESSION_MEMORY.md"
+                            ],
+                  "win":  {
+                              "target":  [
+                                             "nsis",
+                                             "appx"
+                                         ],
+                              "icon":  "build/icon-256.png",
+                              "artifactName":  "${productName}-Setup-${version}.${ext}",
+                              "certificateFile":  "build/noblehyve-cert.pfx",
+                              "certificatePassword":  "noblehyve2024"
+                          },
+                  "nsis":  {
+                               "oneClick":  false,
+                               "perMachine":  false,
+                               "allowToChangeInstallationDirectory":  true,
+                               "deleteAppDataOnUninstall":  false
+                           },
+                  "appx":  {
+                               "identityName":  "MckenzieMakwela.Noblehyve",
+                               "publisher":  "CN=D0C4ACA9-1944-4ADF-8EB2-8CAD838D2A54",
+                               "publisherDisplayName":  "Mckenzie Makwela",
+                               "applicationId":  "NobleHyveBrowser",
+                               "displayName":  "Noblehyve"
+                           },
+               "linux":  {
+                                 "target":  [
+                                                "deb",
+                                                "snap"
+                                            ],
+                                 "category":  "Network"
+                             },
+                   "snap":  {
+                                "confinement":  "strict",
+                                "grade":  "stable",
+                                "summary":  "Secure browser with encrypted code editor and cloud storage",
+                                "description":  "Noblehyve is a secure web browser featuring an encrypted code editor, cloud storage integration, and a built-in analytics pipeline for data processing.",
+                                "plugs":  [
+                                              "desktop",
+                                              "desktop-legacy",
+                                              "wayland",
+                                              "x11",
+                                              "opengl",
+                                              "network",
+                                              "network-bind",
+                                              "home",
+                                              "removable-media",
+                                              "audio-playback",
+                                              "password-manager-service"
+                                          ]
+                            }
+              },
+    "devDependencies":  {
+                            "electron":  "^42.2.0",
+                            "electron-builder":  "^25.1.8"
+                        },
+    "dependencies":  {
+                         "@aws-sdk/client-s3":  "^3.1063.0",
+                         "@xterm/addon-fit":  "^0.10.0",
+                         "@xterm/addon-web-links":  "^0.11.0",
+                         "@xterm/xterm":  "^5.5.0",
+                         "better-sqlite3":  "^12.11.1",
+                         "codemirror":  "^5.65.16",
+                         "crypto-js":  "^4.2.0",
+                         "dotenv":  "^16.6.1",
+                         "kafkajs":  "^2.2.4",
+                         "node-pty":  "^1.1.0"
+                     }
 }

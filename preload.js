@@ -19,6 +19,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Window management
     openEditor: () => ipcRenderer.send('open-editor'),
     openTerminal: () => ipcRenderer.send('open-terminal'),
+    showMoreMenu: () => ipcRenderer.send('show-more-menu'),
+    showDownloadPopup: (downloads) => ipcRenderer.send('show-download-popup', downloads),
+    hideDownloadPopup: () => ipcRenderer.send('hide-download-popup'),
+    updateDownloadPopupState: (downloads) => ipcRenderer.send('update-download-popup-state', downloads),
     
     // Browser management
     showBrowser: (id) => ipcRenderer.send('show-browser', id),
@@ -57,11 +61,20 @@ listCloudFiles: () =>
     openPremiumPage: () => ipcRenderer.send('open-premium-page'),
     getUsageStatus: () => ipcRenderer.invoke('usage:get-status'),
 
+    // Data pipeline
+    sendPipelineEvent: (topic, data) => ipcRenderer.invoke('pipeline:event', { topic, data }),
+    openPipelineDashboard: () => ipcRenderer.send('open-pipeline-dashboard'),
+    getPipelineEvents: (limit, severity) => ipcRenderer.invoke('pipeline:get-recent', { limit, severity }),
+    getPipelineCounts: () => ipcRenderer.invoke('pipeline:get-counts'),
+    exportPipelineJson: (severity) => ipcRenderer.invoke('pipeline:export-json', { severity }),
+
     // External browser settings
     setExternalBrowser: (browser) => ipcRenderer.send('set-external-browser', browser),
     getExternalBrowser: () => ipcRenderer.invoke('get-external-browser'),
     setAutoRedirectAuth: (value) => ipcRenderer.send('set-auto-redirect-auth', value),
     getAutoRedirectAuth: () => ipcRenderer.invoke('get-auto-redirect-auth'),
+    setAsDefaultBrowser: () => ipcRenderer.invoke('set-default-browser'),
+    isDefaultBrowser: () => ipcRenderer.invoke('is-default-browser'),
 
     // Cookie management
     getAllCookies: () => ipcRenderer.invoke('cookies:get-all'),
@@ -82,7 +95,8 @@ listCloudFiles: () =>
             'loading-start', 'loading-stop', 'browser-data-cleared', 'restore-session',
             'save-session-before-quit', 'typo-confirmation', 'password-breach-result',
             'download-started', 'download-progress', 'download-complete', 'download-cancelled', 'download-error',
-            'show-toast'
+            'show-toast', 'open-new-tab', 'menu-action', 'download-popup-closed', 'popup-clear-all-downloads',
+            'premium-status-changed'
         ];
         if (validChannels.includes(channel)) {
             ipcRenderer.on(channel, callback);
@@ -121,7 +135,8 @@ listCloudFiles: () =>
             'get-external-browser', 'get-auto-redirect-auth',
             'cookies:get-all', 'cookies:remove', 'cookies:clear-all', 'cookies:get-for-domain',
             'bookmarks:export', 'bookmarks:import',
-            'usage:get-status'
+            'usage:get-status',
+            'pipeline:event', 'pipeline:get-recent', 'pipeline:get-counts', 'pipeline:export-json'
         ];
         if (validChannels.includes(channel)) {
             return ipcRenderer.invoke(channel, data);

@@ -27,6 +27,9 @@
         <button id="privateTabBtn" title="Private Mode" class="private-btn">👤 Private</button>
         <button id="editorBtn" title="Code Editor" class="editor-btn">📝 Editor</button>
         <button id="terminalBtn" title="Terminal" class="terminal-btn">⌨️ Terminal</button>
+        <button id="downloadBtn" title="Downloads" class="downloads-btn">
+            ⬇️ <span id="downloadBadge" class="download-badge" style="display:none">0</span>
+        </button>
         <button id="settingsBtn" title="Settings">⚙️</button>
         <button id="moreBtn" title="Settings and more">⋯</button>
     </div>
@@ -329,6 +332,13 @@
                                 <label class="toggle-row"><span>Auto-redirect sign-in pages (no prompt)</span><label class="toggle-switch"><input type="checkbox" id="autoRedirectAuth"><span class="toggle-slider"></span></label></label>
                             </div>
                         </div>
+                        <div class="setting-group">
+                            <label class="setting-label">Default browser</label>
+                            <div class="action-row">
+                                <span id="defaultBrowserStatus" style="font-size:11px;color:#888;flex:1">Checking...</span>
+                                <button id="setDefaultBrowserBtn" class="setting-btn">Set as Default</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Cloud Storage -->
@@ -347,6 +357,10 @@
                                 <button id="clearCloudCredsBtn" class="setting-btn" style="width:100%">Clear Credentials</button>
                             </div>
                             <div id="cloudStorageInfo" class="storage-info" style="margin-top:12px;font-size:12px;color:#888"></div>
+                            <div style="margin-top:8px;padding:6px 8px;background:rgba(255,152,0,0.08);border-radius:4px;font-size:10px;color:#888">
+                                ☁️ Free: 100 MB &nbsp;·&nbsp; ⭐ Premium: 5 GB<br>
+                                Files auto-migrate when you activate Premium
+                            </div>
                         </div>
                     </div>
 
@@ -359,9 +373,9 @@
                                 <span id="premiumFeatures">Cloud backup, Encrypted sync, and more!</span>
                             </div>
                             <div id="usageInfo" style="margin:8px 0;padding:8px;background:rgba(255,152,0,0.1);border-radius:6px;font-size:11px;color:#ff9800">
-                                <div>☁️ Cloud saves: <span id="usageCloud">0/5 used</span></div>
-                                <div>🔒 Local encrypts: <span id="usageEncrypt">0/5 used</span></div>
-                                <div>📦 Max file size: 5MB on free tier</div>
+                                <div>☁️ Cloud storage: <span id="usageCloud">0 MB / 100 MB</span></div>
+                                <div>🔒 Local encryption: Unlimited (free)</div>
+                                <div>📄 Cloud file count: Unlimited</div>
                             </div>
                             <div id="licenseSection">
                                 <input type="text" id="licenseKey" class="setting-input" placeholder="Enter license key" style="margin-bottom:8px">
@@ -372,6 +386,18 @@
                                 <button id="buyLicenseBtn" class="setting-btn premium-btn" style="width:100%">Get Premium License</button>
                             </div>
                             <div id="licenseMessage" class="license-message" style="margin-top:10px;font-size:12px"></div>
+                        </div>
+                    </div>
+
+                    <!-- Pipeline -->
+                    <div class="settings-category" id="cat-pipeline">
+                        <div class="setting-group">
+                            <label class="setting-label">Data Pipeline</label>
+                            <div style="font-size:11px;color:#888;margin-bottom:8px">
+                                Real-time crash, editor, and terminal telemetry via Kafka.<br>
+                                Start with: <code>docker compose up -d</code> in project root.
+                            </div>
+                            <button id="openPipelineBtn" class="setting-btn" style="width:100%">Open Pipeline Dashboard</button>
                         </div>
                     </div>
 
@@ -500,6 +526,20 @@
                 <button id="typoCorrectBtn" class="primary">Go to Correct Site</button>
                 <button id="typoProceedBtn" class="danger">Continue Anyway</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Download Popup -->
+    <div id="downloadPopup" class="download-popup" style="display: none;">
+        <div class="download-popup-header">
+            <span>⬇️ Downloads <span id="downloadPopupCount" class="download-popup-count"></span></span>
+            <div class="download-popup-header-actions">
+                <button id="downloadPopupClearAll" class="download-popup-clear-btn" title="Clear all">✕</button>
+            </div>
+        </div>
+        <div id="downloadPopupList" class="download-popup-list"></div>
+        <div class="download-popup-footer">
+            <button id="downloadPopupViewAll">View all downloads →</button>
         </div>
     </div>
 
