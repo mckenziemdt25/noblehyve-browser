@@ -23,7 +23,7 @@
     "author":  "NobleHyve \u003csupport@noblehyve.com\u003e",
     "license":  "MIT",
     "build":  {
-                  "appId":  "com.noblehyve.browser",
+                  "appId":  "com.noblehyve.noblehyvebrowser",
 "productName": "Noblehyve",
                   "directories":  {
                                       "output":  "dist"
