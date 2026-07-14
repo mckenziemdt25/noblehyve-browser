@@ -1,6 +1,6 @@
 require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
-const { app, BrowserWindow, BrowserView, Menu, ipcMain, session, shell, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, Menu, ipcMain, session, shell, dialog, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs').promises;
 const os = require('os');
@@ -269,7 +269,7 @@ function createWindow() {
         },
         show: true,
         backgroundColor: '#1e1e1e',
-        icon: path.join(__dirname, 'assets', 'icon.ico')
+        icon: path.join(__dirname, 'assets', 'icon.png')
     });
 
     const windowId = mainWindow.webContents.id;
@@ -465,7 +465,7 @@ function createEditorWindow() {
             sandbox: false,
             enableRemoteModule: false
         },
-        icon: path.join(__dirname, 'assets', 'icon.ico'),
+        icon: path.join(__dirname, 'assets', 'icon.png'),
         backgroundColor: '#1e1e1e',
         show: true
     });
@@ -535,7 +535,7 @@ function createTerminalWindow() {
             sandbox: false,
             enableRemoteModule: false
         },
-        icon: path.join(__dirname, 'assets', 'icon.ico'),
+        icon: path.join(__dirname, 'assets', 'icon.png'),
         backgroundColor: '#0c0c0c',
         show: true
     });
@@ -1140,7 +1140,8 @@ function setupIPCHandlers() {
             const cloudflare = require('./cloudflare');
             const stats = await cloudflare.getStorageStats(null, isPremium, true);
             if (!stats.success) {
-                return { success: false, error: 'Could not verify cloud storage usage. Please try again.' };
+                console.error('Cloud storage verification failed:', stats.error);
+                return { success: false, error: stats.error || 'Could not verify cloud storage usage. Please try again.' };
             }
             if (stats.totalSize + fileBytes > maxBytes) {
                 const maxMB = Math.round(maxBytes / (1024 * 1024));
@@ -1521,6 +1522,17 @@ app.whenReady().then(async () => {
         }
     }
     createWindow();
+
+    // Re-verify license on wake from sleep
+    powerMonitor.on('resume', () => {
+        console.log('System resumed from sleep — re-verifying license');
+        try {
+            const licenseManager = require('./license-manager');
+            licenseManager.refreshStatus();
+        } catch (err) {
+            console.error('License re-verification on resume failed:', err.message);
+        }
+    });
 });
 
 app.on('window-all-closed', () => {

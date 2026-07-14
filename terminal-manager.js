@@ -2,6 +2,7 @@
 const { ipcMain, app } = require('electron');
 const os = require('os');
 const path = require('path');
+const fs = require('fs');
 const pty = require('node-pty');
 const pipeline = require('./kafka-pipeline');
 
@@ -10,8 +11,61 @@ class TerminalManager {
         this.sessions = new Map();
         this._openTerminalFn = openTerminalFn || null;
         this._pendingResolvers = new Map();
+        this._sessionMeta = new Map();
+        this._cwdIntervals = new Map();
         this.setupIPCHandlers();
         console.log('TerminalManager initialized on:', os.platform());
+    }
+
+    _getDefaultShell() {
+        if (process.platform === 'win32') {
+            return { shell: 'powershell.exe', args: ['-NoLogo', '-ExecutionPolicy', 'RemoteSigned'] };
+        } else if (process.platform === 'darwin') {
+            return { shell: '/bin/zsh', args: [] };
+        }
+        const userShell = process.env.SHELL || '/bin/bash';
+        return { shell: userShell, args: [] };
+    }
+
+    _resolveCwd(pid) {
+        try {
+            if (process.platform === 'linux') {
+                const cwd = fs.realpathSync(`/proc/${pid}/cwd`);
+                return cwd || null;
+            } else if (process.platform === 'darwin') {
+                const output = require('child_process').execSync(`lsof -p ${pid} -Fn | grep '^fcwd' | head -1`).toString();
+                const match = output.match(/^fcwd(.+)/);
+                return match ? match[1].trim() : null;
+            }
+            return null;
+        } catch {
+            return null;
+        }
+    }
+
+    _startCwdPolling(sessionId, pid, eventSender) {
+        if (this._cwdIntervals.has(sessionId)) return;
+        const interval = setInterval(() => {
+            const cwd = this._resolveCwd(pid);
+            if (cwd) {
+                const meta = this._sessionMeta.get(sessionId);
+                if (meta && meta.cwd !== cwd) {
+                    meta.cwd = cwd;
+                    if (eventSender && !eventSender.isDestroyed()) {
+                        eventSender.send('terminal:cwd-changed', { id: sessionId, cwd });
+                    }
+                }
+            }
+        }, 1000);
+        this._cwdIntervals.set(sessionId, interval);
+    }
+
+    _stopCwdPolling(sessionId) {
+        const interval = this._cwdIntervals.get(sessionId);
+        if (interval) {
+            clearInterval(interval);
+            this._cwdIntervals.delete(sessionId);
+        }
     }
 
     setupIPCHandlers() {
@@ -20,25 +74,15 @@ class TerminalManager {
             const start = Date.now();
             try {
                 console.log('Creating terminal session:', id);
-                
-                let terminalShell = shell;
-                let shellArgs = [];
-                
-                if (!terminalShell) {
-                    if (process.platform === 'win32') {
-                        terminalShell = 'powershell.exe';
-                        shellArgs = ['-NoLogo', '-ExecutionPolicy', 'RemoteSigned'];
-                    } else if (process.platform === 'darwin') {
-                        terminalShell = '/bin/zsh';
-                    } else {
-                        terminalShell = '/bin/bash';
-                    }
-                }
-                
+
+                const defaultCfg = this._getDefaultShell();
+                const terminalShell = defaultCfg.shell;
+                const shellArgs = defaultCfg.args;
+
                 let workingDir = cwd || os.homedir();
                 const ptyCols = cols || 120;
                 const ptyRows = rows || 30;
-                
+
                 const ptyProcess = pty.spawn(terminalShell, shellArgs, {
                     name: 'xterm-256color',
                     cols: ptyCols,
@@ -47,33 +91,37 @@ class TerminalManager {
                     env: {
                         ...process.env,
                         TERM: 'xterm-256color',
-                        COLORTERM: 'truecolor',
-                        SYSTEMROOT: process.env.SYSTEMROOT,
-                        COMSPEC: process.env.COMSPEC || 'cmd.exe'
+                        COLORTERM: 'truecolor'
                     }
                 });
-                
+
                 this.sessions.set(id, ptyProcess);
+                this._sessionMeta.set(id, { shell: terminalShell, cwd: workingDir, pid: ptyProcess.pid });
+
                 const resolver = this._pendingResolvers.get(id);
                 if (resolver) { resolver(); this._pendingResolvers.delete(id); }
                 pipeline.terminal({ action: 'session-created', id, shell: terminalShell, elapsedMs: Date.now() - start });
-                
+
+                this._startCwdPolling(id, ptyProcess.pid, event.sender);
+
                 ptyProcess.onData((data) => {
                     if (!event.sender.isDestroyed()) {
                         event.sender.send('terminal:data', { id, data });
                     }
                 });
-                
+
                 ptyProcess.onExit(({ exitCode, signal }) => {
+                    this._stopCwdPolling(id);
                     pipeline.terminal({ action: 'session-exit', id, exitCode, signal, uptimeMs: Date.now() - start });
                     if (!event.sender.isDestroyed()) {
                         event.sender.send('terminal:exit', { id, exitCode, signal });
                     }
                     this.sessions.delete(id);
+                    this._sessionMeta.delete(id);
                 });
-                
-                return { success: true, pid: ptyProcess.pid };
-                
+
+                return { success: true, pid: ptyProcess.pid, shell: terminalShell };
+
             } catch (error) {
                 console.error('Terminal creation error:', error);
                 pipeline.terminal({ action: 'session-error', id, error: error.message, elapsedMs: Date.now() - start });
@@ -115,11 +163,26 @@ class TerminalManager {
                     console.error('Kill error:', err);
                 }
                 this.sessions.delete(id);
+                this._stopCwdPolling(id);
+                this._sessionMeta.delete(id);
             }
         });
         
-        // Get current working directory
-        ipcMain.handle('terminal:get-cwd', async () => {
+        // Get current working directory for a session
+        ipcMain.handle('terminal:get-cwd', async (event, id) => {
+            const sessionId = id || 'main';
+            const meta = this._sessionMeta.get(sessionId);
+            if (meta && meta.cwd) {
+                return { success: true, path: meta.cwd };
+            }
+            const session = this.sessions.get(sessionId);
+            if (session && !session.killed) {
+                const resolved = this._resolveCwd(session.pid);
+                if (resolved) {
+                    if (meta) meta.cwd = resolved;
+                    return { success: true, path: resolved };
+                }
+            }
             return { success: true, path: this._workspaceDir || process.cwd() };
         });
 
@@ -298,6 +361,8 @@ if (mainWindow && !mainWindow.isDestroyed()) {
                     console.error('Error killing session:', err);
                 }
             }
+            this._stopCwdPolling(id);
+            this._sessionMeta.delete(id);
         }
         this.sessions.clear();
         this._workspaceDir = null;

@@ -5,7 +5,7 @@ const EventEmitter = require('events');
 
 const GUMROAD_PRODUCT_ID = 'yozdw';
 const GUMROAD_VERIFY_URL = 'https://api.gumroad.com/v2/licenses/verify';
-const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+const REFRESH_INTERVAL_MS = 1 * 60 * 60 * 1000;
 
 class LicenseManager extends EventEmitter {
     constructor() {

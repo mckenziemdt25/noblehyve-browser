@@ -61,12 +61,13 @@
                                "displayName":  "Noblehyve"
                            },
                "linux":  {
-                                 "target":  [
-                                                "deb",
-                                                "snap"
-                                            ],
-                                 "category":  "Network"
-                             },
+                                  "target":  [
+                                                 "deb",
+                                                 "snap"
+                                             ],
+                                  "category":  "Network",
+                                  "icon":  "build/icon-512.png"
+                              },
                    "snap":  {
                                 "confinement":  "strict",
                                 "grade":  "stable",

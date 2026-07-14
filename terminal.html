@@ -78,8 +78,6 @@
     <div class="terminal-header">
         <div class="terminal-title">📟 NobleHyve Terminal</div>
         <div class="shell-selector" id="shellSelector">
-            <button class="shell-btn active" data-shell="powershell">PowerShell</button>
-            <button class="shell-btn" data-shell="cmd">CMD</button>
         </div>
     </div>
 
@@ -145,6 +143,45 @@
         }
     });
 
+    // ── Platform détection ──────────────────────────────────────────────
+    let platform = 'linux';
+    (async () => {
+        try {
+            const info = await window.terminalAPI.getSystemInfo();
+            platform = info.platform;
+        } catch (_) {}
+        initShellSelector();
+    })();
+
+    const SHELLS = {
+        linux:  { id: 'bash',   label: 'Bash',    args: [] },
+        darwin: { id: 'zsh',    label: 'Zsh',     args: [] },
+        win32:  { id: 'powershell', label: 'PowerShell', args: ['-NoLogo', '-ExecutionPolicy', 'RemoteSigned'] },
+    };
+    // Windows also offers CMD
+    SHELLS.win32_alt = { id: 'cmd', label: 'CMD', args: [] };
+
+    function getAvailableShells() {
+        if (platform === 'win32') return [SHELLS.win32, SHELLS.win32_alt];
+        if (platform === 'darwin') return [SHELLS.darwin];
+        return [SHELLS.linux];
+    }
+
+    function initShellSelector() {
+        const selector = document.getElementById('shellSelector');
+        const shells = getAvailableShells();
+        shells.forEach((s, i) => {
+            const btn = document.createElement('button');
+            btn.className = 'shell-btn' + (i === 0 ? ' active' : '');
+            btn.dataset.shell = s.id;
+            btn.textContent = s.label;
+            btn.addEventListener('click', () => switchShell(s.id));
+            selector.appendChild(btn);
+        });
+        currentShell = shells[0].id;
+        document.getElementById('shellBadge').textContent = shells[0].label;
+    }
+
     // ── PTY wiring ─────────────────────────────────────────────────────
     term.onData((data) => {
         if (window.terminalAPI && window.terminalAPI.write) {
@@ -174,67 +211,55 @@
         });
     }
 
+    // ── CWD tracking ──────────────────────────────────────────────────
+    if (window.terminalAPI && window.terminalAPI.onCwdChanged) {
+        window.terminalAPI.onCwdChanged(({ id, cwd }) => {
+            if (id === currentSessionId) {
+                document.getElementById('workingDir').textContent = cwd;
+            }
+        });
+    }
+
     // ── Shell switching ──────────────────────────────────────────────────
     async function switchShell(shell) {
         if (shell === currentShell) return;
-        
+
         currentShell = shell;
-        document.getElementById('shellBadge').textContent = shell === 'powershell' ? 'PowerShell' : 'CMD';
-        
-        // Update active button style
+        const shells = getAvailableShells();
+        const match = shells.find(s => s.id === shell);
+        document.getElementById('shellBadge').textContent = match ? match.label : shell;
+
         document.querySelectorAll('.shell-btn').forEach(btn => {
-            if (btn.dataset.shell === shell) {
-                btn.classList.add('active');
-            } else {
-                btn.classList.remove('active');
-            }
+            btn.classList.toggle('active', btn.dataset.shell === shell);
         });
-        
-        // Restart session with new shell
+
         await startSession();
-    }
-    
-    // Get shell command based on type
-    function getShellCommand() {
-        if (currentShell === 'powershell') {
-            return 'powershell.exe';
-        } else {
-            return 'cmd.exe';
-        }
-    }
-    
-    function getShellArgs() {
-        if (currentShell === 'powershell') {
-            return ['-NoLogo', '-ExecutionPolicy', 'RemoteSigned'];
-        } else {
-            return [];
-        }
     }
 
     // ── Session management ──────────────────────────────────────────────────
     async function startSession() {
         document.getElementById('terminalStatus').textContent = '🟡 Starting...';
-        
+
         if (!window.terminalAPI) {
             document.getElementById('terminalStatus').textContent = '🔴 API Missing';
             term.write('\r\n\x1b[31mERROR: terminalAPI not loaded!\x1b[0m\r\n');
             return;
         }
-        
+
         // Kill existing session if any
         try {
             if (window.terminalAPI.kill) {
                 await window.terminalAPI.kill(currentSessionId);
             }
         } catch(e) {}
-        
+
         // Clear terminal
         term.clear();
-        
+
         // Get current working directory
         let cwd = null;
         try {
-            const cwdResult = await window.terminalAPI.getCwd();
+            const cwdResult = await window.terminalAPI.getCwd(currentSessionId);
             if (cwdResult && cwdResult.success) {
                 cwd = cwdResult.path;
                 document.getElementById('workingDir').textContent = cwd;
@@ -242,46 +267,26 @@
         } catch (err) {
             console.error('getCwd error:', err);
         }
-        
-        // Create new session with selected shell
+
+        // Create new session — backend auto-detects the correct shell per platform
         try {
-            const shellCmd = getShellCommand();
-            const shellArgs = getShellArgs();
-            
-            // Pass actual terminal dimensions so PTY matches display from the start
             const { cols, rows } = term;
-            console.log('Starting session with:', shellCmd, shellArgs, `(${cols}x${rows})`);
-            
-            const result = await window.terminalAPI.createSession(currentSessionId, shellCmd, cwd, cols, rows);
-            
+            console.log('Starting session', `(${cols}x${rows})`);
+
+            const result = await window.terminalAPI.createSession(currentSessionId, null, cwd, cols, rows);
+
             if (result && result.success) {
-                // Sync PTY size immediately after creation
                 const { cols, rows } = term;
                 if (window.terminalAPI && window.terminalAPI.resize) {
                     window.terminalAPI.resize(currentSessionId, cols, rows);
                 }
                 document.getElementById('terminalStatus').textContent = '🟢 Ready';
-                const shellName = currentShell === 'powershell' ? 'PowerShell' : 'Command Prompt';
+                const shellName = result.shell || 'Terminal';
                 term.write(`\x1b[32m✓ ${shellName} Ready\x1b[0m\r\n`);
-                if (currentShell === 'powershell') {
-                    term.write('\x1b[36mType commands like "dir", "cd", or "npm install"\x1b[0m\r\n');
-                    term.write('\x1b[36mSwitch to CMD using the button above\x1b[0m\r\n\r\n');
-                } else {
-                    term.write('\x1b[36mType commands like "dir", "cd", or "npm install"\x1b[0m\r\n');
-                    term.write('\x1b[36mSwitch to PowerShell using the button above\x1b[0m\r\n\r\n');
-                }
+                term.write('\x1b[36mType commands like "ls", "cd", or "npm install"\x1b[0m\r\n\r\n');
             } else {
                 document.getElementById('terminalStatus').textContent = '🔴 Failed';
-                term.write(`\r\n\x1b[31mCould not start ${currentShell}: ${result?.error || 'Unknown error'}\x1b[0m\r\n`);
-                term.write(`\r\n\x1b[33mTrying fallback...\x1b[0m\r\n`);
-                
-                // Fallback to other shell
-                const fallbackShell = currentShell === 'powershell' ? 'cmd.exe' : 'powershell.exe';
-                const fallbackResult = await window.terminalAPI.createSession(currentSessionId, fallbackShell, cwd);
-                if (fallbackResult && fallbackResult.success) {
-                    document.getElementById('terminalStatus').textContent = '🟢 Ready (Fallback)';
-                    term.write(`\x1b[32m✓ ${fallbackShell} Ready (Fallback)\x1b[0m\r\n`);
-                }
+                term.write(`\r\n\x1b[31mCould not start terminal: ${result?.error || 'Unknown error'}\x1b[0m\r\n`);
             }
         } catch (err) {
             console.error('createSession error:', err);
@@ -292,24 +297,21 @@
         term.focus();
     }
 
-    // ── Event listeners for shell switching ──────────────────────────────────
-    document.querySelectorAll('.shell-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            switchShell(btn.dataset.shell);
-        });
-    });
-
     // Kill PTY on close
     window.addEventListener('beforeunload', () => {
-        try { 
+        try {
             if (window.terminalAPI && window.terminalAPI.kill) {
-                window.terminalAPI.kill(currentSessionId); 
+                window.terminalAPI.kill(currentSessionId);
             }
         } catch (_) {}
     });
 
-    // Start the terminal
-    startSession();
+    // Start the terminal once the shell selector is initialized
+    const origInit = initShellSelector;
+    initShellSelector = function() {
+        origInit.call(this);
+        startSession();
+    };
 </script>
 </body>
 </html>

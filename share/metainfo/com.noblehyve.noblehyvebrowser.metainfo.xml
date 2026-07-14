@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.noblehyve.noblehyvebrowser</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Noblehyve Browser</name>
+  <summary>Secure browser with encrypted code editor and cloud storage</summary>
+  <description>
+    <p>
+      Noblehyve is a secure web browser built on Electron, featuring:
+    </p>
+    <ul>
+      <li>Encrypted code editor with syntax highlighting and cloud sync</li>
+      <li>End-to-end encrypted cloud storage via Cloudflare R2</li>
+      <li>Built-in terminal with PTY support</li>
+      <li>Phishing and malware domain protection</li>
+      <li>Session management with tab persistence</li>
+      <li>File encryption for local and cloud storage</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">com.noblehyve.noblehyvebrowser.desktop</launchable>
+  <url type="homepage">https://github.com/mckenziemdt25/noblehyve-browser</url>
+  <url type="bugtracker">https://github.com/mckenziemdt25/noblehyve-browser/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Noblehyve Browser main window</caption>
+      <image>https://raw.githubusercontent.com/mckenziemdt25/noblehyve-browser/main/docs/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="1.0.0" date="2026-07-14"/>
+  </releases>
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-cartoon">none</content_attribute>
+    <content_attribute id="violence-fantasy">none</content_attribute>
+    <content_attribute id="violence-realistic">none</content_attribute>
+    <content_attribute id="violence-bloodshed">none</content_attribute>
+    <content_attribute id="violence-sexual">none</content_attribute>
+    <content_attribute id="violence-desecration">none</content_attribute>
+    <content_attribute id="violence-slavery">none</content_attribute>
+    <content_attribute id="violence-worship">none</content_attribute>
+    <content_attribute id="drugs-alcohol">none</content_attribute>
+    <content_attribute id="drugs-narcotics">none</content_attribute>
+    <content_attribute id="drugs-tobacco">none</content_attribute>
+    <content_attribute id="sex-nudity">none</content_attribute>
+    <content_attribute id="sex-themes">none</content_attribute>
+    <content_attribute id="sex-homosexuality">none</content_attribute>
+    <content_attribute id="sex-prostitution">none</content_attribute>
+    <content_attribute id="sex-adultery">none</content_attribute>
+    <content_attribute id="sex-appearance">none</content_attribute>
+    <content_attribute id="language-profanity">none</content_attribute>
+    <content_attribute id="language-humor">none</content_attribute>
+    <content_attribute id="language-discrimination">none</content_attribute>
+    <content_attribute id="social-chat">none</content_attribute>
+    <content_attribute id="social-info">none</content_attribute>
+    <content_attribute id="social-audio">none</content_attribute>
+    <content_attribute id="social-location">none</content_attribute>
+    <content_attribute id="social-contacts">none</content_attribute>
+    <content_attribute id="money-purchasing">none</content_attribute>
+    <content_attribute id="money-gambling">none</content_attribute>
+    <content_attribute id="money-donation">none</content_attribute>
+    <content_attribute id="money-trading">none</content_attribute>
+  </content_rating>
+  <developer_name>NobleHyve</developer_name>
+  <custom>
+    <value key="Purism::form_factor">workstation</value>
+  </custom>
+  <provides>
+    <binary>noblehyve-browser</binary>
+  </provides>
+</component>

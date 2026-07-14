@@ -12,3 +12,9 @@ tools/last-license.txt
 build/*.pfx
 build/*.p12
 build/*.cert
+
+# Illustrator export folders
+256w/
+300w/
+512w/
+720w/

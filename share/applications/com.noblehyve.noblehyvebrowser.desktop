@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Noblehyve Browser
+Comment=Secure browser with encrypted code editor and cloud storage
+Exec=noblehyve-browser
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;
+Icon=com.noblehyve.noblehyvebrowser
+StartupWMClass=Noblehyve
+StartupNotify=true
+MimeType=text/html;text/plain;application/xhtml+xml;

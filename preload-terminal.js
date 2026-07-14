@@ -21,9 +21,13 @@ contextBridge.exposeInMainWorld('terminalAPI', {
         ipcRenderer.on('terminal:error', (event, error) => callback(error));
         return () => ipcRenderer.removeAllListeners('terminal:error');
     },
+    onCwdChanged: (callback) => {
+        ipcRenderer.on('terminal:cwd-changed', (event, data) => callback(data));
+        return () => ipcRenderer.removeAllListeners('terminal:cwd-changed');
+    },
     
     // Utility methods
-    getCwd: () => ipcRenderer.invoke('terminal:get-cwd'),
+    getCwd: (id) => ipcRenderer.invoke('terminal:get-cwd', id),
     getSystemInfo: () => ipcRenderer.invoke('terminal:system-info'),
     download: (url, filename, cwd) => ipcRenderer.invoke('terminal:download', { url, filename, cwd })
 });

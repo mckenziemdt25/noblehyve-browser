@@ -23,7 +23,7 @@ class CloudflareR2 {
                 const encryptedData = fs.readFileSync(this.credPath, 'utf8');
                 const data = JSON.parse(encryptedData);
 
-                if (safeStorage.isEncryptionAvailable()) {
+                if (safeStorage.isEncryptionAvailable() && data.encrypted) {
                     const decrypted = safeStorage.decryptString(Buffer.from(data.encrypted, 'base64'));
                     const creds = JSON.parse(decrypted);
 
@@ -35,14 +35,27 @@ class CloudflareR2 {
                     console.log('Cloudflare credentials loaded from encrypted storage');
                     return true;
                 } else {
-                    console.warn('SafeStorage not available - using fallback');
                     if (data.legacy && data.legacy.accountId) {
+                        if (safeStorage.isEncryptionAvailable() && !data.encrypted) {
+                            this.saveCredentials(data.legacy.accountId, data.legacy.accessKeyId, data.legacy.secretAccessKey);
+                        }
                         this.accountId = data.legacy.accountId;
                         this.accessKeyId = data.legacy.accessKeyId;
                         this.secretAccessKey = data.legacy.secretAccessKey;
                         this.initS3Client();
                         return true;
                     }
+                }
+            }
+
+            const oldPath = this.credPath.replace('.encrypted', '.json');
+            if (fs.existsSync(oldPath)) {
+                console.log('Migrating credentials from legacy format...');
+                const data = JSON.parse(fs.readFileSync(oldPath, 'utf8'));
+                if (data.accountId && data.accessKeyId && data.secretAccessKey) {
+                    this.saveCredentials(data.accountId, data.accessKeyId, data.secretAccessKey);
+                    console.log('Credentials migrated to new format');
+                    return true;
                 }
             }
         } catch (err) {
@@ -93,6 +106,7 @@ class CloudflareR2 {
                 const encrypted = safeStorage.encryptString(credsString);
                 encryptedData = {
                     encrypted: encrypted.toString('base64'),
+                    legacy: credentials,
                     method: 'safeStorage',
                     version: '1.0'
                 };
