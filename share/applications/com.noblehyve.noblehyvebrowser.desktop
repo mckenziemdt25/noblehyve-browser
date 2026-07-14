@@ -1,5 +1,5 @@
 [Desktop Entry]
-Name=Noblehyve Browser
+Name=Noblehyve
 Comment=Secure browser with encrypted code editor and cloud storage
 Exec=noblehyve-browser
 Terminal=false

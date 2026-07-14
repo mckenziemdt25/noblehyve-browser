@@ -3,7 +3,7 @@
   <id>com.noblehyve.noblehyvebrowser</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
-  <name>Noblehyve Browser</name>
+  <name>Noblehyve</name>
   <summary>Secure browser with encrypted code editor and cloud storage</summary>
   <description>
     <p>
@@ -23,7 +23,7 @@
   <url type="bugtracker">https://github.com/mckenziemdt25/noblehyve-browser/issues</url>
   <screenshots>
     <screenshot type="default">
-      <caption>Noblehyve Browser main window</caption>
+      <caption>Noblehyve main window</caption>
       <image>https://raw.githubusercontent.com/mckenziemdt25/noblehyve-browser/main/docs/screenshot.png</image>
     </screenshot>
   </screenshots>
