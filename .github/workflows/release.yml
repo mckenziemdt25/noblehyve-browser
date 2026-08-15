@@ -101,9 +101,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          shopt -s globstar
           tag="${GITHUB_REF_NAME}"
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release delete "$tag" --yes --cleanup-tag
           fi
-          gh release create "$tag" artifacts/**/* --generate-notes --title "$tag"
+          mapfile -t files < <(find artifacts -type f)
+          gh release create "$tag" "${files[@]}" --generate-notes --title "$tag"
