@@ -13,6 +13,14 @@ build/*.pfx
 build/*.p12
 build/*.cert
 
+# Local test data and session notes — not for public distribution
+test_data/
+test_encrypted_data/
+SESSION_MEMORY.md
+SESSION_SUMMARY.md
+code.js
+dy
+
 # Illustrator export folders
 256w/
 300w/
