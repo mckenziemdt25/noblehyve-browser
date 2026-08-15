@@ -43,9 +43,7 @@
                                              "appx"
                                          ],
                               "icon":  "build/icon-256.png",
-                              "artifactName":  "${productName}-Setup-${version}.${ext}",
-                              "certificateFile":  "build/noblehyve-cert.pfx",
-                              "certificatePassword":  "noblehyve2024"
+                              "artifactName":  "${productName}-Setup-${version}.${ext}"
                           },
                   "nsis":  {
                                "oneClick":  false,

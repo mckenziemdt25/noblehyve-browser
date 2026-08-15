@@ -32,10 +32,13 @@ jobs:
         shell: bash
         run: |
           if [ -n "${{ secrets.APPX_CERT_BASE64 }}" ]; then
+            mkdir -p build
             echo "${{ secrets.APPX_CERT_BASE64 }}" | base64 -d > build/noblehyve-cert.pfx
+            npm pkg set build.win.certificateFile="build/noblehyve-cert.pfx"
             echo "✅ Certificate decoded from secret"
           else
-            echo "⚠️  Using repo certificate. Store as APPX_CERT_BASE64 secret for security."
+            echo "⚠️  No APPX_CERT_BASE64 secret set - skipping APPX build"
+            echo "SKIP_APPX=true" >> "$GITHUB_ENV"
           fi
 
           PASSWORD="${{ secrets.APPX_CERT_PASSWORD }}"
@@ -53,11 +56,13 @@ jobs:
           GYP_MSVS_VERSION: 2022
 
       - name: Build APPX package
+        if: env.SKIP_APPX != 'true'
         run: npx electron-builder --win appx
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/upload-artifact@v4
+        if: env.SKIP_APPX != 'true'
         with:
           name: noblehyve-appx-${{ github.sha }}
           path: dist/*.appx
